@@ -348,6 +348,8 @@ export const useOptions = () =>
     error: state.error,
     dirtyFields: state.dirtyFields,
     restartRequired: state.restartRequired,
+    appliedRestartPending: state.appliedRestartPending,
+    platform: state.platform,
     // Daemon config state
     daemonValues: state.daemonValues,
     daemonMetadata: state.daemonMetadata,
@@ -364,6 +366,7 @@ export const useOptions = () =>
     discardChanges: state.discardChanges,
     updateDaemonSetting: state.updateDaemonSetting,
     getDaemonWorkingValue: state.getDaemonWorkingValue,
+    restartApp: state.restartApp,
     // Computed (derived as booleans to make re-render dependency explicit)
     isDirty: state.dirtyFields.size > 0 || Object.keys(state.pendingDaemonChanges).length > 0,
     hasPendingRestartChanges: Object.keys(state.pendingDaemonChanges).some(key => {

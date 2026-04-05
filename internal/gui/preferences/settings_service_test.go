@@ -123,8 +123,8 @@ func TestSettingsServiceReset(t *testing.T) {
 	if service.GetInt("digits") != 8 {
 		t.Errorf("digits: expected 8, got %d", service.GetInt("digits"))
 	}
-	if service.GetString("theme") != "system" {
-		t.Errorf("theme: expected 'system', got '%s'", service.GetString("theme"))
+	if service.GetString("theme") != "dark" {
+		t.Errorf("theme: expected 'dark', got '%s'", service.GetString("theme"))
 	}
 }
 
@@ -335,8 +335,8 @@ func TestNewDefaultSettings(t *testing.T) {
 	if defaults.TransactionFee != 10000 {
 		t.Errorf("TransactionFee: expected 10000, got %d", defaults.TransactionFee)
 	}
-	if defaults.Theme != "system" {
-		t.Errorf("Theme: expected 'system', got '%s'", defaults.Theme)
+	if defaults.Theme != "dark" {
+		t.Errorf("Theme: expected 'dark', got '%s'", defaults.Theme)
 	}
 	if defaults.Digits != 8 {
 		t.Errorf("Digits: expected 8, got %d", defaults.Digits)

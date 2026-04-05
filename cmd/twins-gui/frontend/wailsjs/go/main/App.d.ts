@@ -146,6 +146,8 @@ export function GetPeerList():Promise<Array<main.PeerDetail>>;
 
 export function GetPendingRepairResult():Promise<main.RepairResult>;
 
+export function GetPlatform():Promise<string>;
+
 export function GetRPCCategoryOrder():Promise<Array<string>>;
 
 export function GetRPCCommandCategories():Promise<Record<string, Array<string>>>;
@@ -249,6 +251,8 @@ export function RemovePeerAlias(arg1:string):Promise<void>;
 export function ResetPreferences():Promise<void>;
 
 export function ResetSettings():Promise<void>;
+
+export function RestartApp():Promise<void>;
 
 export function RestoreToStakingOnlyMode():Promise<main.RestoreToStakingOnlyModeResult>;
 

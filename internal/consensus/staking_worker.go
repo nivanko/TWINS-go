@@ -60,14 +60,8 @@ type StakingWorker struct {
 	running bool
 
 	// Configuration
-	searchInterval     time.Duration // How often to try staking (default: 1 second)
-	maxSearchTime      uint32        // Max future time to search in seconds (default: 60)
-	consensusHeightLag uint32        // Allowed lag from consensus height (default: 10 blocks)
-
-	// Consensus ahead pause (sticky state).
-	// Set when localHeight - consensusHeight > consensusHeightLag (possible fork).
-	// Cleared only when consensusHeight >= localHeight (network caught up).
-	aheadPaused bool
+	searchInterval time.Duration // How often to try staking (default: 1 second)
+	maxSearchTime  uint32        // Max future time to search in seconds (default: 60)
 
 	// Statistics
 	statsMu          sync.RWMutex
@@ -79,9 +73,8 @@ type StakingWorker struct {
 
 // StakingWorkerConfig contains configuration for the staking worker.
 type StakingWorkerConfig struct {
-	SearchInterval     time.Duration
-	MaxSearchTime      uint32
-	ConsensusHeightLag uint32 // Allowed blocks behind consensus (default: 10)
+	SearchInterval time.Duration
+	MaxSearchTime  uint32
 }
 
 // DefaultStakingWorkerConfig returns default configuration.
@@ -89,7 +82,6 @@ func DefaultStakingWorkerConfig() *StakingWorkerConfig {
 	return &StakingWorkerConfig{
 		SearchInterval:     1 * time.Second,
 		MaxSearchTime:      30, // Search up to 30 seconds in the future (legacy: nHashDrift = 30)
-		ConsensusHeightLag: 10, // Allow staking if within 10 blocks of consensus
 	}
 }
 
@@ -114,9 +106,8 @@ func NewStakingWorker(
 		builder:            builder,
 		params:             params,
 		logger:             logger.WithField("component", "staking_worker"),
-		searchInterval:     config.SearchInterval,
-		maxSearchTime:      config.MaxSearchTime,
-		consensusHeightLag: config.ConsensusHeightLag,
+		searchInterval: config.SearchInterval,
+		maxSearchTime:  config.MaxSearchTime,
 	}
 }
 
@@ -373,38 +364,16 @@ func (sw *StakingWorker) isAtConsensusHeight() (bool, string) {
 		return false, fmt.Sprintf("failed to get local height: %v", err)
 	}
 
-	// Check if node is ahead of consensus (possible fork detection with hysteresis).
-	// Once triggered, staking stays paused until consensus catches up completely.
-	if localHeight > consensusHeight {
-		gap := localHeight - consensusHeight
-		if gap > sw.consensusHeightLag && !sw.aheadPaused {
-			sw.aheadPaused = true
-			sw.logger.WithFields(logrus.Fields{
-				"local_height":     localHeight,
-				"consensus_height": consensusHeight,
-				"gap":              gap,
-				"confidence":       fmt.Sprintf("%.1f%%", confidence*100),
-				"peers":            peerCount,
-			}).Warn("Staking paused: node is ahead of network consensus, possible fork")
+	// Staking requires exact match with consensus height.
+	// Behind: our staked block will be orphaned when we sync the missing blocks.
+	// Ahead: we may be on a fork; staking extends the wrong chain.
+	if localHeight != consensusHeight {
+		direction := "behind"
+		if localHeight > consensusHeight {
+			direction = "ahead of"
 		}
-	} else if sw.aheadPaused {
-		// Consensus caught up or surpassed us — resume
-		sw.aheadPaused = false
-		sw.logger.WithFields(logrus.Fields{
-			"local_height":     localHeight,
-			"consensus_height": consensusHeight,
-		}).Info("Staking resumed: network consensus caught up")
-	}
-
-	if sw.aheadPaused {
-		return false, fmt.Sprintf("ahead of consensus, waiting for network: local=%d, consensus=%d (confidence=%.1f%%, peers=%d)",
-			localHeight, consensusHeight, confidence*100, peerCount)
-	}
-
-	// Check if we're behind consensus (existing threshold-based check)
-	if consensusHeight > localHeight && consensusHeight-localHeight > sw.consensusHeightLag {
-		return false, fmt.Sprintf("behind consensus height: local=%d, consensus=%d (confidence=%.1f%%, peers=%d)",
-			localHeight, consensusHeight, confidence*100, peerCount)
+		return false, fmt.Sprintf("%s consensus height: local=%d, consensus=%d (confidence=%.1f%%, peers=%d)",
+			direction, localHeight, consensusHeight, confidence*100, peerCount)
 	}
 
 	return true, ""

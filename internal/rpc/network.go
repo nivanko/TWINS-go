@@ -685,10 +685,11 @@ func (s *Server) getSyncStatusHandler(req *Request) *Response {
 	// Get current blockchain height
 	currentHeight := syncer.GetCurrentHeight()
 
-	// Get consensus height and confidence from state machine
-	consensusHeight, confidence, err := stateMachine.GetConsensusHeight()
+	// Get consensus height and confidence from state machine.
+	// Uses outbound-only strategy first, falls back to all peers if no healthy outbound.
+	consensusHeight, confidence, _, err := stateMachine.GetConsensusHeightWithFallback()
 	if err != nil {
-		// Fallback to current height if consensus can't be determined
+		// Fallback to current height if consensus can't be determined at all
 		consensusHeight = currentHeight
 		confidence = 0.0
 	}

@@ -119,6 +119,15 @@ type Balance struct {
 	Immature    int64 // Coinbase/coinstake not yet mature
 }
 
+// txKey is the composite map key for w.transactions: Hash + Vout.
+// This allows a single transaction to have multiple wallet entries (e.g. a
+// combined staker+MN coinstake produces one entry for the MN reward at Vout=0
+// and a second entry for the staking reward at Vout=1).
+type txKey struct {
+	Hash types.Hash
+	Vout int32
+}
+
 // WalletTransaction represents a wallet transaction
 // Matches Qt's TransactionRecord in transactionrecord.h
 type WalletTransaction struct {

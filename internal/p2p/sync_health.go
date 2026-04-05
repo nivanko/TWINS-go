@@ -35,7 +35,7 @@ const (
 	ErrorScoreCooldownThreshold = 5.0              // Trigger cooldown at 5 error points
 	CooldownDuration            = 5 * time.Minute  // 5 minute cooldown
 	HealthDecayTime             = 1 * time.Hour    // Reset to neutral after 1 hour
-	HealthThreshold             = 30.0             // Minimum score to be healthy
+	HealthThreshold             = 15.0             // Minimum score to be healthy
 	BaseHealthScore             = 50.0             // Neutral starting score
 	StaleHeaderTimeout          = 10 * time.Minute // Disconnect outbound peers with no header updates after this duration
 	StalePingHeightTimeout      = 10 * time.Minute // Disconnect 70928 peers whose ping height hasn't advanced
@@ -280,7 +280,7 @@ func (pht *PeerHealthTracker) IsHealthy(address string) bool {
 	}
 
 	score := pht.GetHealthScore(address)
-	return score > HealthThreshold
+	return score >= HealthThreshold
 }
 
 // RemovePeer removes a peer from the health tracker when they disconnect
@@ -288,6 +288,23 @@ func (pht *PeerHealthTracker) RemovePeer(address string) {
 	pht.mu.Lock()
 	defer pht.mu.Unlock()
 	delete(pht.peers, address)
+}
+
+// PruneDisconnectedPeers removes health tracker entries for peers that are no
+// longer in the connected set. connectedAddrs should contain the addresses of
+// all currently connected peers. Returns the number of stale entries removed.
+func (pht *PeerHealthTracker) PruneDisconnectedPeers(connectedAddrs map[string]struct{}) int {
+	pht.mu.Lock()
+	defer pht.mu.Unlock()
+
+	pruned := 0
+	for addr := range pht.peers {
+		if _, connected := connectedAddrs[addr]; !connected {
+			delete(pht.peers, addr)
+			pruned++
+		}
+	}
+	return pruned
 }
 
 // GetHealthScore returns the current health score for a peer
@@ -502,6 +519,43 @@ func (pht *PeerHealthTracker) GetStaleHeaderPeers(staleDuration time.Duration) [
 	}
 
 	return stale
+}
+
+// GetUnhealthyPeers returns addresses of outbound peers whose health score has dropped
+// below HealthThreshold. These peers are candidates for disconnection to free connection
+// slots for healthier peers. Only outbound peers are returned since we control those connections.
+func (pht *PeerHealthTracker) GetUnhealthyPeers() []string {
+	// Phase 1: collect candidate addresses under map lock
+	pht.mu.RLock()
+	var candidates []string
+	for addr, stats := range pht.peers {
+		stats.mu.RLock()
+		isOutbound := stats.IsOutbound
+		cooldownUntil := stats.CooldownUntil
+		stats.mu.RUnlock()
+
+		if !isOutbound {
+			continue
+		}
+
+		// Skip peers on cooldown — they're already being managed
+		if time.Now().Before(cooldownUntil) {
+			continue
+		}
+
+		candidates = append(candidates, addr)
+	}
+	pht.mu.RUnlock()
+
+	// Phase 2: check health scores outside map lock (avoids nested RLock)
+	var unhealthy []string
+	for _, addr := range candidates {
+		if pht.GetHealthScore(addr) < HealthThreshold {
+			unhealthy = append(unhealthy, addr)
+		}
+	}
+
+	return unhealthy
 }
 
 // UpdatePingHeight updates the height reported by a peer via ping/pong (protocol 70928+).

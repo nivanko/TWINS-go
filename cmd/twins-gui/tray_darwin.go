@@ -83,3 +83,15 @@ func hideDockIcon() {
 func showDockIcon() {
 	C.setActivationPolicyRegular()
 }
+
+// shouldStartTray returns true on macOS where tray is supported.
+func shouldStartTray() bool { return true }
+
+// splashHeightExtra returns 0 on macOS — Wails uses content dimensions.
+func splashHeightExtra() int { return 0 }
+
+// setTaskbarIcon is a no-op on macOS — icon handled by the app bundle.
+func setTaskbarIcon() {}
+
+// configureWindowsTaskbarIdentity is a no-op on macOS.
+func configureWindowsTaskbarIdentity() {}

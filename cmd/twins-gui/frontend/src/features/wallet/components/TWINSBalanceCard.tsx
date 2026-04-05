@@ -10,7 +10,9 @@ interface TWINSBalanceCardProps {
   isLoading?: boolean;
 }
 
-// Balance row component for consistent styling
+// Balance row rendered as a table row (tr).
+// Parent table auto-sizes both columns to content width,
+// keeping values tight to labels with right-aligned monospace numbers.
 const BalanceRow: React.FC<{
   label: string;
   value: number;
@@ -19,22 +21,23 @@ const BalanceRow: React.FC<{
 }> = ({ label, value, isLoading, hideIfZero = false }) => {
   const { formatAmount } = useDisplayUnits();
 
-  // Hide row if value is zero and hideIfZero is true
   if (hideIfZero && value === 0) {
     return null;
   }
 
   return (
-    <div className="qt-hbox" style={{ alignItems: 'baseline', marginBottom: '4px' }}>
-      <div className="qt-label" style={{ minWidth: '80px', fontSize: '13px' }}>{label}:</div>
-      {isLoading ? (
-        <div className="loading-skeleton" style={{ width: '150px', height: '14px' }} />
-      ) : (
-        <div className="qt-balance-value" style={{ fontSize: '13px', marginLeft: '20px', fontWeight: 'bold' }}>
-          {formatAmount(value)}
-        </div>
-      )}
-    </div>
+    <tr>
+      <td style={{ fontSize: '13px', color: '#999', paddingRight: '12px', paddingBottom: '4px', whiteSpace: 'nowrap' }}>
+        {label}:
+      </td>
+      <td style={{ fontSize: '13px', fontWeight: 'bold', textAlign: 'right', paddingBottom: '4px', whiteSpace: 'nowrap' }}>
+        {isLoading ? (
+          <div className="loading-skeleton" style={{ width: '150px', height: '14px' }} />
+        ) : (
+          formatAmount(value)
+        )}
+      </td>
+    </tr>
   );
 };
 
@@ -53,45 +56,38 @@ export const TWINSBalanceCard: React.FC<TWINSBalanceCardProps> = ({
         </div>
       </div>
 
-      <div style={{ marginTop: '10px' }}>
-        {/* Available balance - spendable funds */}
-        <BalanceRow
-          label={t('balance.available')}
-          value={balance.available}
-          isLoading={isLoading}
-        />
-
-        {/* Pending balance - unconfirmed transactions */}
-        <BalanceRow
-          label={t('balance.pending')}
-          value={balance.pending}
-          isLoading={isLoading}
-          hideIfZero={hideZeroBalances}
-        />
-
-        {/* Immature balance - staking rewards < 120 confirmations */}
-        <BalanceRow
-          label={t('balance.immature')}
-          value={balance.immature}
-          isLoading={isLoading}
-          hideIfZero={hideZeroBalances}
-        />
-
-        {/* Locked balance - masternode collateral */}
-        <BalanceRow
-          label={t('balance.locked')}
-          value={balance.locked}
-          isLoading={isLoading}
-          hideIfZero={hideZeroBalances}
-        />
-
-        {/* Total balance */}
-        <BalanceRow
-          label={t('balance.total')}
-          value={balance.total}
-          isLoading={isLoading}
-        />
-      </div>
+      <table style={{ marginTop: '10px', borderCollapse: 'collapse' }}>
+        <tbody>
+          <BalanceRow
+            label={t('balance.available')}
+            value={balance.available}
+            isLoading={isLoading}
+          />
+          <BalanceRow
+            label={t('balance.pending')}
+            value={balance.pending}
+            isLoading={isLoading}
+            hideIfZero={hideZeroBalances}
+          />
+          <BalanceRow
+            label={t('balance.immature')}
+            value={balance.immature}
+            isLoading={isLoading}
+            hideIfZero={hideZeroBalances}
+          />
+          <BalanceRow
+            label={t('balance.locked')}
+            value={balance.locked}
+            isLoading={isLoading}
+            hideIfZero={hideZeroBalances}
+          />
+          <BalanceRow
+            label={t('balance.total')}
+            value={balance.total}
+            isLoading={isLoading}
+          />
+        </tbody>
+      </table>
     </div>
   );
 };

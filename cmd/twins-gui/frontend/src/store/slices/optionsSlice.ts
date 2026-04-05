@@ -90,6 +90,10 @@ export interface OptionsState {
   error: string | null;
   dirtyFields: Set<string>;
   restartRequired: boolean;
+  appliedRestartPending: boolean;
+
+  // Platform info
+  platform: string; // "darwin", "linux", "windows"
 }
 
 export interface OptionsActions {
@@ -109,6 +113,9 @@ export interface OptionsActions {
   updateDaemonSetting: (key: string, value: unknown) => void;
   getDaemonWorkingValue: (key: string) => unknown;
   hasPendingRestartChanges: () => boolean;
+
+  // Restart
+  restartApp: () => Promise<void>;
 
   // Computed
   isDirty: () => boolean;
@@ -135,6 +142,8 @@ const initialState: OptionsState = {
   error: null,
   dirtyFields: new Set(),
   restartRequired: false,
+  appliedRestartPending: false,
+  platform: '',
 };
 
 export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
@@ -171,16 +180,22 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
         GetDaemonConfigMetadata,
         GetDaemonConfigValues,
         GetDaemonConfigCategories,
+        GetPlatform,
       } = await import('@wailsjs/go/main/App');
 
-      const [settings, metadata, themes, daemonMeta, daemonVals, daemonCats] = await Promise.all([
+      const [settings, metadata, themes, daemonMeta, daemonVals, daemonCats, platform] = await Promise.all([
         GetSettings(),
         GetAllSettingsMetadata(),
         GetAvailableThemes(),
         GetDaemonConfigMetadata(),
         GetDaemonConfigValues(),
         GetDaemonConfigCategories(),
+        GetPlatform(),
       ]);
+
+      // Check if any daemon settings have pending restart (from a previous Apply)
+      const daemonValsTyped = (daemonVals || {}) as Record<string, DaemonSettingValue>;
+      const hasDaemonRestartPending = Object.values(daemonValsTyped).some(v => v.pendingRestart);
 
       set({
         workingSettings: settings as Partial<GUISettings>,
@@ -188,12 +203,14 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
         metadata: metadata as Record<string, SettingMetadata>,
         availableThemes: themes as ThemeInfo[],
         daemonMetadata: (daemonMeta || []) as config.SettingMeta[],
-        daemonValues: (daemonVals || {}) as Record<string, DaemonSettingValue>,
+        daemonValues: daemonValsTyped,
         daemonCategories: (daemonCats || []) as string[],
         pendingDaemonChanges: {},
         isLoading: false,
         dirtyFields: new Set(),
         restartRequired: false,
+        appliedRestartPending: hasDaemonRestartPending,
+        platform: platform as string,
       });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to load settings';
@@ -317,12 +334,27 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
         ? (await GetDaemonConfigValues()) as Record<string, DaemonSettingValue>
         : state.daemonValues;
 
+      // Determine if this apply included restart-requiring settings
+      let appliedRestartPending = get().appliedRestartPending;
+      if (hasDirtyGUI) {
+        const hasGUIRestart = dirtyFieldsSnapshot.some(key => state.metadata[key]?.requiresRestart);
+        if (hasGUIRestart) appliedRestartPending = true;
+      }
+      if (hasDirtyDaemon) {
+        const hasDaemonRestart = Object.keys(pendingDaemonSnapshot).some(key => {
+          const meta = state.daemonMetadata.find(m => m.key === key);
+          return meta !== undefined && !meta.hotReload;
+        });
+        if (hasDaemonRestart) appliedRestartPending = true;
+      }
+
       set({
         originalSettings: workingSettingsSnapshot,
         dirtyFields: new Set(),
         pendingDaemonChanges: {},
         daemonValues: newDaemonVals,
         isSaving: false,
+        appliedRestartPending,
       });
 
       // Notify transaction slice when relevant settings change
@@ -356,7 +388,7 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
 
   resetToDefaults: async () => {
     // Snapshot before any await to avoid stale-closure reads
-    const { daemonMetadata, daemonValues } = get();
+    const { daemonMetadata, daemonValues, workingSettings: previousSettings } = get();
     set({ isSaving: true, error: null });
 
     try {
@@ -398,10 +430,45 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
         pendingDaemonChanges: {},
         daemonValues: newDaemonVals as Record<string, DaemonSettingValue>,
         restartRequired: daemonRestartRequired,
+        appliedRestartPending: daemonRestartRequired || get().appliedRestartPending,
         isSaving: false,
         // Reset display units to defaults
         displayUnit: (newSettings as any).nDisplayUnit ?? 0,
         displayDigits: (newSettings as any).digits ?? 8,
+      });
+
+      // Hot reload language if it changed from previous value
+      const newLang = (newSettings as any).language as string | undefined;
+      if (newLang !== undefined && newLang !== previousSettings.language) {
+        const { loadLanguage } = await import('../../i18n/lazyLoader');
+        if (newLang) {
+          localStorage.setItem('twins-language', newLang);
+          await loadLanguage(newLang);
+        } else {
+          // Empty string = system default = English
+          localStorage.removeItem('twins-language');
+          await loadLanguage('en');
+        }
+      }
+
+      // Hot reload tray icon visibility if it changed
+      const newHideTray = (newSettings as any).fHideTrayIcon;
+      if (newHideTray !== undefined && newHideTray !== previousSettings.fHideTrayIcon) {
+        const { SetTrayIconVisible } = await import('@wailsjs/go/main/App');
+        await SetTrayIconVisible(!newHideTray);
+      }
+
+      // Sync reactive store state for settings consumed outside the options dialog
+      const { useStore } = await import('../useStore');
+      useStore.getState().syncHideOrphanStakes();
+      useStore.getState().syncCoinControlEnabled();
+
+      // Show success notification
+      useStore.getState().addNotification({
+        type: 'success',
+        title: 'Settings',
+        message: 'Settings reset to defaults',
+        duration: 3000,
       });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : (typeof error === 'string' && error ? error : 'Failed to reset settings');
@@ -418,6 +485,12 @@ export const createOptionsSlice: SliceCreator<OptionsSlice> = (set, get) => ({
       restartRequired: false,
       error: null,
     });
+  },
+
+  // Restart
+  restartApp: async () => {
+    const { RestartApp } = await import('@wailsjs/go/main/App');
+    await RestartApp();
   },
 
   // Computed

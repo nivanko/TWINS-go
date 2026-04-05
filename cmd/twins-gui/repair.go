@@ -91,6 +91,12 @@ func (a *App) GetPendingRepairResult() *RepairResult {
 	return result
 }
 
+// RestartApp is a Wails binding that restarts the application without any repair action.
+// Used by the Options dialog to apply settings that require a restart.
+func (a *App) RestartApp() error {
+	return a.restartApp()
+}
+
 // restartApp shuts down the daemon, spawns a new instance, and quits the Wails app.
 // This follows the legacy C++ pattern: Interrupt() + PrepareShutdown() → startDetached → quit.
 // The node is shut down first to release the DB lock, P2P port, and RPC port before

@@ -5,6 +5,7 @@ package p2p
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -342,6 +343,37 @@ func (sm *SyncStateMachine) GetConsensusHeight() (uint32, float64, error) {
 	}
 
 	return result.Height, result.Confidence, nil
+}
+
+// GetConsensusHeightWithFallback tries StrategyOutboundOnly first, then falls
+// back to StrategyAll only when no outbound peers are available.
+// If outbound peers exist but disagree ("insufficient peer agreement"), the
+// error is returned without fallback to preserve Sybil resistance.
+// Returns (height, confidence, strategy_used, error).
+func (sm *SyncStateMachine) GetConsensusHeightWithFallback() (uint32, float64, string, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	// Try outbound-only first (more Sybil-resistant)
+	result, err := sm.consensus.CalculateConsensusHeightWithStrategy(StrategyOutboundOnly)
+	if err == nil {
+		return result.Height, result.Confidence, "outbound_only", nil
+	}
+
+	// Only fall back to StrategyAll when outbound peers are unavailable.
+	// If outbound peers exist but disagree, preserve the error to maintain
+	// Sybil resistance — don't let inbound peers override outbound consensus.
+	if !strings.Contains(err.Error(), "no peers available") {
+		return 0, 0.0, "", err
+	}
+
+	// Fallback to all peers when no outbound peers exist
+	result, err = sm.consensus.CalculateConsensusHeightWithStrategy(StrategyAll)
+	if err != nil {
+		return 0, 0.0, "", err
+	}
+
+	return result.Height, result.Confidence, "all_fallback", nil
 }
 
 // GetBlocksBehind returns how many blocks we are behind consensus

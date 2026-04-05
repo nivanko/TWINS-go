@@ -72,7 +72,8 @@
     "title": "Window Settings",
     "hideTrayIcon": "Hide tray icon",
     "minimizeToTray": "Minimize to the tray instead of the taskbar",
-    "minimizeOnClose": "Minimize on close"
+    "minimizeOnClose": "Minimize on close",
+    "platformNotSupported": "Window settings are not yet implemented for your operating system."
   },
   "display": {
     "title": "Display Settings",
@@ -99,6 +100,10 @@
     "saved": "Settings saved successfully",
     "restartRequired": "Some changes will take effect after restarting the wallet.",
     "restartRequiredTitle": "Restart Required",
+    "restartButton": "Restart Now",
+    "restartConfirm": "The application will restart to apply the new settings. Any unsaved work will be lost.",
+    "restartConfirmTitle": "Restart Application",
+    "restarting": "Restarting application...",
     "resetConfirm": "Are you sure you want to reset all settings to their default values?"
   },
   "overridden": {

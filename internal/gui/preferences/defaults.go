@@ -8,7 +8,7 @@ func NewDefaultSettings() *GUISettings {
 		MinimizeToTray:     false,
 		MinimizeOnClose:    false,
 		DisplayUnit:        DisplayUnitTWINS, // Full TWINS
-		Theme:              "system",         // Follow system theme
+		Theme:              "dark",           // Dark theme (default)
 		Digits:             8,                // Full precision
 		Language:           "",               // System default
 		HideTrayIcon:       false,

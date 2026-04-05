@@ -135,3 +135,14 @@ func TestTrayManagerSetVisibleHideNoop(t *testing.T) {
 		t.Error("SetVisible(false) on hidden icon should remain hidden")
 	}
 }
+
+func TestShouldStartTray(t *testing.T) {
+	// shouldStartTray is platform-specific:
+	// - macOS/Linux: true (tray supported)
+	// - Windows: false (tray disabled)
+	// On the current platform (macOS or Linux in CI), it should return true.
+	result := shouldStartTray()
+	if !result {
+		t.Error("shouldStartTray() should return true on macOS/Linux")
+	}
+}

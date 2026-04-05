@@ -168,26 +168,26 @@ func (w *Wallet) processBlock(block *types.Block) error {
 				FromAddress:   fromAddress,
 			}
 
-			w.transactions[txHash] = walletTx
+			w.transactions[txKey{txHash, 0}] = walletTx
 
 			// When the wallet is simultaneously the block staker AND a masternode
 			// recipient in the same coinstake, create a second entry for the staking
-			// reward stored under a synthetic hash key. The real tx hash is preserved
-			// in WalletTransaction.Hash so the GUI can still link to the explorer.
+			// reward. The real tx hash is preserved in WalletTransaction.Hash so the
+			// GUI can still link to the explorer.
 			if extra != nil {
 				w.nextSeqNum++
-				syntheticHash := deriveSyntheticHash(txHash)
-				w.transactions[syntheticHash] = &WalletTransaction{
-					Tx:          tx,
-					Hash:        txHash, // real hash for explorer linking
-					BlockHash:   blockHash,
-					BlockHeight: int32(blockHeight),
+				w.transactions[txKey{txHash, 1}] = &WalletTransaction{
+					Tx:            tx,
+					Hash:          txHash, // real hash for explorer linking
+					BlockHash:     blockHash,
+					BlockHeight:   int32(blockHeight),
 					Confirmations: 1,
-					Time:        txTime,
-					SeqNum:      w.nextSeqNum,
-					Category:    extra.Category,
-					Amount:      extra.NetAmount,
-					Address:     extra.Address,
+					Time:          txTime,
+					SeqNum:        w.nextSeqNum,
+					Category:      extra.Category,
+					Amount:        extra.NetAmount,
+					Address:       extra.Address,
+					Vout:          1,
 				}
 			}
 		}
@@ -274,9 +274,9 @@ func (w *Wallet) disconnectBlock(block *types.Block) error {
 			}
 		}
 
-		// Step 3: Remove wallet transaction (and synthetic secondary entry if present)
-		delete(w.transactions, txHash)
-		delete(w.transactions, deriveSyntheticHash(txHash))
+		// Step 3: Remove wallet transaction (and secondary entry if present)
+		delete(w.transactions, txKey{txHash, 0})
+		delete(w.transactions, txKey{txHash, 1})
 	}
 
 	// Step 4: Clean pending state — remove any pending references related to this block
@@ -411,24 +411,11 @@ func (w *Wallet) getAddressForScriptLocked(scriptPubKey []byte) (*Address, bool)
 // categorizationExtra carries optional secondary categorization data for transactions
 // where the wallet receives two reward types from the same coinstake (e.g., acting
 // as both block staker and masternode recipient). When non-nil, callers should create
-// a second WalletTransaction entry stored under deriveSyntheticHash(txHash).
+// a second WalletTransaction entry stored under txKey{txHash, 1}.
 type categorizationExtra struct {
 	Category  TxCategory
 	NetAmount int64
 	Address   string
-}
-
-// deriveSyntheticHash returns a deterministic secondary map key derived from a real
-// transaction hash. The last 4 bytes are XOR'd with 0xFF, making synthetic hashes
-// trivially distinguishable from real transaction hashes.
-func deriveSyntheticHash(h types.Hash) types.Hash {
-	var s types.Hash
-	copy(s[:], h[:])
-	s[28] ^= 0xFF
-	s[29] ^= 0xFF
-	s[30] ^= 0xFF
-	s[31] ^= 0xFF
-	return s
 }
 
 // categorizeTransaction determines transaction category, net amount, and primary address
@@ -530,7 +517,7 @@ func (w *Wallet) categorizeTransactionLocked(
 			// in addition to its staking reward. Return the MN payment as the primary
 			// category so the transaction is shown as "Masternode Reward" in the GUI.
 			// Also return secondary staking-reward data so callers can create a second
-			// wallet entry for the staking portion (stored under deriveSyntheticHash).
+			// wallet entry for the staking portion (stored under txKey{hash, 1}).
 			stakingNet := receivedAmount - mnAmount - spentAmount
 			var stakeExtra *categorizationExtra
 			if stakingNet > 0 {
@@ -662,7 +649,7 @@ func (w *Wallet) OnMempoolTransaction(tx *types.Transaction) {
 	w.mu.RLock()
 	// Already confirmed — skip. But allow re-tracking if the entry is an evicted
 	// unconfirmed tx (BlockHeight == -1) that re-entered the mempool.
-	if existingTx, exists := w.transactions[txHash]; exists {
+	if existingTx, exists := w.getTransactionByHash(txHash); exists {
 		if existingTx.BlockHeight >= 0 {
 			// Truly confirmed — skip
 			w.mu.RUnlock()
@@ -745,7 +732,7 @@ func (w *Wallet) OnMempoolTransaction(tx *types.Transaction) {
 
 	// Re-check confirmed under mu.RLock (processBlock needs mu.Lock, so can't run concurrently).
 	// Allow re-tracking if the entry is an evicted unconfirmed tx (BlockHeight == -1).
-	if existingTx, exists := w.transactions[txHash]; exists && existingTx.BlockHeight >= 0 {
+	if existingTx, exists := w.getTransactionByHash(txHash); exists && existingTx.BlockHeight >= 0 {
 		w.pendingMu.Unlock()
 		w.mu.RUnlock()
 		return
@@ -859,10 +846,10 @@ func (w *Wallet) EvictPendingTx(txHash types.Hash) {
 	// in the transaction list. If the tx is later confirmed in a block,
 	// processBlock will overwrite this entry with the confirmed version.
 	for _, wtx := range evicted {
-		if _, exists := w.transactions[wtx.Hash]; !exists {
+		if _, exists := w.transactions[txKey{wtx.Hash, wtx.Vout}]; !exists {
 			w.nextSeqNum++
 			wtx.SeqNum = w.nextSeqNum
-			w.transactions[wtx.Hash] = wtx
+			w.transactions[txKey{wtx.Hash, wtx.Vout}] = wtx
 		}
 	}
 

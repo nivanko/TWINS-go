@@ -607,3 +607,90 @@ func TestStalePingHeightHealthPenalty(t *testing.T) {
 		t.Errorf("expected penalty ~%.1f, got %.1f", expectedPenalty, actualPenalty)
 	}
 }
+
+// TestPruneDisconnectedPeers tests removal of stale entries for disconnected peers
+func TestPruneDisconnectedPeers(t *testing.T) {
+	tracker := NewPeerHealthTracker()
+
+	// Register 5 peers
+	tracker.RecordPeerDiscovered("peer1:37817", 1000, false, TierNone, true)
+	tracker.RecordPeerDiscovered("peer2:37817", 1000, false, TierNone, true)
+	tracker.RecordPeerDiscovered("peer3:37817", 1000, false, TierNone, false)
+	tracker.RecordPeerDiscovered("peer4:12345", 1000, false, TierNone, false)
+	tracker.RecordPeerDiscovered("peer5:54321", 1000, false, TierNone, true)
+
+	allPeers := tracker.GetAllPeers()
+	if len(allPeers) != 5 {
+		t.Fatalf("expected 5 peers, got %d", len(allPeers))
+	}
+
+	// Only peer1, peer3, peer5 are still connected
+	connected := map[string]struct{}{
+		"peer1:37817": {},
+		"peer3:37817": {},
+		"peer5:54321": {},
+	}
+
+	pruned := tracker.PruneDisconnectedPeers(connected)
+	if pruned != 2 {
+		t.Errorf("expected 2 pruned, got %d", pruned)
+	}
+
+	allPeers = tracker.GetAllPeers()
+	if len(allPeers) != 3 {
+		t.Errorf("expected 3 peers after prune, got %d", len(allPeers))
+	}
+
+	// Verify correct peers remain
+	for _, addr := range []string{"peer1:37817", "peer3:37817", "peer5:54321"} {
+		if _, exists := allPeers[addr]; !exists {
+			t.Errorf("expected peer %s to remain after prune", addr)
+		}
+	}
+	for _, addr := range []string{"peer2:37817", "peer4:12345"} {
+		if _, exists := allPeers[addr]; exists {
+			t.Errorf("expected peer %s to be pruned", addr)
+		}
+	}
+}
+
+// TestPruneDisconnectedPeersEmpty tests pruning with empty connected set removes all
+func TestPruneDisconnectedPeersEmpty(t *testing.T) {
+	tracker := NewPeerHealthTracker()
+
+	tracker.RecordPeerDiscovered("peer1", 1000, false, TierNone, true)
+	tracker.RecordPeerDiscovered("peer2", 1000, false, TierNone, false)
+
+	pruned := tracker.PruneDisconnectedPeers(map[string]struct{}{})
+	if pruned != 2 {
+		t.Errorf("expected 2 pruned, got %d", pruned)
+	}
+
+	allPeers := tracker.GetAllPeers()
+	if len(allPeers) != 0 {
+		t.Errorf("expected 0 peers after prune, got %d", len(allPeers))
+	}
+}
+
+// TestPruneDisconnectedPeersNoOp tests pruning when all peers are connected
+func TestPruneDisconnectedPeersNoOp(t *testing.T) {
+	tracker := NewPeerHealthTracker()
+
+	tracker.RecordPeerDiscovered("peer1", 1000, false, TierNone, true)
+	tracker.RecordPeerDiscovered("peer2", 1000, false, TierNone, false)
+
+	connected := map[string]struct{}{
+		"peer1": {},
+		"peer2": {},
+	}
+
+	pruned := tracker.PruneDisconnectedPeers(connected)
+	if pruned != 0 {
+		t.Errorf("expected 0 pruned, got %d", pruned)
+	}
+
+	allPeers := tracker.GetAllPeers()
+	if len(allPeers) != 2 {
+		t.Errorf("expected 2 peers after no-op prune, got %d", len(allPeers))
+	}
+}

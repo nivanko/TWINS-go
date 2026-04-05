@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"math"
 	"strings"
 
@@ -10,6 +11,12 @@ import (
 )
 
 // === Settings Handler Methods for Wails Frontend ===
+
+// GetPlatform returns the operating system identifier (e.g., "darwin", "linux", "windows").
+// Used by the frontend to disable platform-specific features that are not yet implemented.
+func (a *App) GetPlatform() string {
+	return runtime.GOOS
+}
 
 // GetSettings returns all GUI settings
 func (a *App) GetSettings() *preferences.GUISettings {

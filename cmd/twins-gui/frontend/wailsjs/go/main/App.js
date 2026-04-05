@@ -278,6 +278,10 @@ export function GetPendingRepairResult() {
   return window['go']['main']['App']['GetPendingRepairResult']();
 }
 
+export function GetPlatform() {
+  return window['go']['main']['App']['GetPlatform']();
+}
+
 export function GetRPCCategoryOrder() {
   return window['go']['main']['App']['GetRPCCategoryOrder']();
 }
@@ -484,6 +488,10 @@ export function ResetPreferences() {
 
 export function ResetSettings() {
   return window['go']['main']['App']['ResetSettings']();
+}
+
+export function RestartApp() {
+  return window['go']['main']['App']['RestartApp']();
 }
 
 export function RestoreToStakingOnlyMode() {

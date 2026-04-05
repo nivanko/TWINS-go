@@ -56,6 +56,20 @@ func NewManager(ctx context.Context) *Manager {
 	}
 }
 
+// SetSplashHeightExtra adds extra pixels to the splash window height.
+// Used on Windows where Wails window dimensions include the title bar,
+// reducing the content area below the designed 550px.
+func (m *Manager) SetSplashHeightExtra(extra int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if preset, ok := m.presets[StateSplash]; ok {
+		preset.Height += extra
+		preset.MinHeight += extra
+		preset.MaxHeight += extra
+		m.presets[StateSplash] = preset
+	}
+}
+
 // getDefaultPresets returns the default window presets for each state
 func getDefaultPresets() map[State]WindowPreset {
 	return map[State]WindowPreset{

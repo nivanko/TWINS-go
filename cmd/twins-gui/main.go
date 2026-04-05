@@ -68,12 +68,16 @@ func main() {
 	// Get window title (with network suffix if applicable)
 	windowTitle := guiConfig.GetWindowTitle()
 
+	// Windows taskbar grouping/pinning uses AppUserModel identity in addition
+	// to the window icon state. Set it before any UI is created.
+	configureWindowsTaskbarIdentity()
+
 	// Create application with options
 	err = wails.Run(&options.App{
 		// Window will be shown by startup function after determining intro vs splash
 		Title:       windowTitle,
 		Width:       constants.SplashWindowWidth,
-		Height:      constants.SplashWindowHeight,
+		Height:      constants.SplashWindowHeight + splashHeightExtra(),
 		MinWidth:    constants.IntroWindowWidth,
 		MinHeight:   363,
 		StartHidden: true, // Hide window until we determine the correct initial state

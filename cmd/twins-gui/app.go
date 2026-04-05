@@ -212,6 +212,12 @@ func (a *App) startup(ctx context.Context) {
 	// Initialize window manager
 	a.windowManager = window.NewManager(ctx)
 
+	// On Windows, Wails window dimensions include the title bar, so the content
+	// area is smaller than the requested height. Add extra pixels to compensate.
+	if extra := splashHeightExtra(); extra > 0 {
+		a.windowManager.SetSplashHeightExtra(extra)
+	}
+
 	// Set custom window title if provided via -windowtitle flag
 	if a.windowManager != nil && a.guiConfig != nil && a.guiConfig.WindowTitle != "" {
 		a.windowManager.SetCustomTitle(a.guiConfig.GetWindowTitle())
@@ -457,16 +463,25 @@ func (a *App) domReady(ctx context.Context) {
 		fmt.Println("Real daemon mode - waiting for frontend StartInitialization()")
 	}
 
+	// On Windows, explicitly set ICON_BIG for the taskbar icon.
+	// Wails v2 only sets ICON_SMALL (title bar); this fills in ICON_BIG from .exe resources.
+	setTaskbarIcon()
+
 	// Initialize system tray icon (requires Wails event loop to be running).
-	// Always start the tray so it can be shown later via SetVisible(true).
+	// On Windows, the tray is completely disabled (shouldStartTray returns false).
+	// On macOS/Linux, always start the tray so it can be shown later via SetVisible(true).
 	// If fHideTrayIcon is set, immediately swap to a transparent icon.
 	a.trayManager = NewTrayManager(a)
-	a.trayManager.Start(appIcon)
-	if a.settingsService != nil && a.settingsService.GetBool("fHideTrayIcon") {
-		a.trayManager.SetVisible(false)
-		fmt.Println("System tray icon started (hidden via fHideTrayIcon)")
+	if shouldStartTray() {
+		a.trayManager.Start(appIcon)
+		if a.settingsService != nil && a.settingsService.GetBool("fHideTrayIcon") {
+			a.trayManager.SetVisible(false)
+			fmt.Println("System tray icon started (hidden via fHideTrayIcon)")
+		} else {
+			fmt.Println("System tray icon started")
+		}
 	} else {
-		fmt.Println("System tray icon started")
+		fmt.Println("System tray icon disabled on this platform")
 	}
 }
 

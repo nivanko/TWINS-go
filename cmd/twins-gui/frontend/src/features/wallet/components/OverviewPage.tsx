@@ -45,22 +45,46 @@ const OverviewPage: React.FC = () => {
   // Ref to track if component is mounted (for cleanup)
   const isMountedRef = useRef(true);
 
-  // Fetch recent transactions (9 for overview page)
-  const fetchRecentTransactions = useCallback(async () => {
+  // Maximum number of recent transactions to display
+  const MAX_RECENT_TRANSACTIONS = 9;
+
+  // Serialized transaction refresh: prevents concurrent fetches from producing
+  // stale or accumulated results. Only one fetch runs at a time; if a new
+  // request arrives while one is in-flight, it runs after the current completes.
+  const txFetchInFlightRef = useRef(false);
+  const txFetchPendingRef = useRef(false);
+
+  const refreshTransactions = useCallback(async (showLoading = false) => {
+    if (txFetchInFlightRef.current) {
+      txFetchPendingRef.current = true;
+      return;
+    }
+    txFetchInFlightRef.current = true;
+    if (showLoading) setTxLoading(true);
+
     try {
-      setTxLoading(true);
-      logger.debug('OverviewPage: Fetching recent transactions...');
       const txs = await GetRecentTransactions();
-      const txInstances = txs.map(tx => new core.Transaction(tx));
-      setRecentTransactions(txInstances);
-      logger.debug(`OverviewPage: Fetched ${txInstances.length} recent transactions`);
+      if (isMountedRef.current) {
+        setRecentTransactions(txs.map(tx => new core.Transaction(tx)).slice(0, MAX_RECENT_TRANSACTIONS));
+      }
     } catch (error) {
       logger.error('OverviewPage: Failed to fetch recent transactions', error);
-      setRecentTransactions([]);
+      if (isMountedRef.current) setRecentTransactions([]);
     } finally {
-      setTxLoading(false);
+      if (showLoading) setTxLoading(false);
+      txFetchInFlightRef.current = false;
+      // If a request came in while we were fetching, run it now
+      if (txFetchPendingRef.current && isMountedRef.current) {
+        txFetchPendingRef.current = false;
+        refreshTransactions(false);
+      }
     }
   }, []);
+
+  // Initial fetch with loading indicator
+  const fetchRecentTransactions = useCallback(async () => {
+    await refreshTransactions(true);
+  }, [refreshTransactions]);
 
   // Fetch blockchain, network, and staking info
   const fetchStatusInfo = useCallback(async () => {
@@ -106,6 +130,7 @@ const OverviewPage: React.FC = () => {
 
   // Silent refresh for auto-refresh interval: updates data without loading indicators
   // to prevent UI flicker every 10 seconds.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const silentRefresh = useCallback(() => {
     // Refresh network, staking info, and GUI settings without loading indicator
     // Note: blockchainInfo is refreshed by useP2PEvents (MainLayout) on P2P events and every 10s
@@ -127,12 +152,8 @@ const OverviewPage: React.FC = () => {
       }
     }).catch(err => { logger.debug('Silent refresh: balance failed', err); });
 
-    // Refresh transactions without txLoading indicator
-    GetRecentTransactions().then(txs => {
-      if (isMountedRef.current) {
-        setRecentTransactions(txs.map(tx => new core.Transaction(tx)));
-      }
-    }).catch(err => { logger.debug('Silent refresh: transactions failed', err); });
+    // Refresh transactions without txLoading indicator (serialized)
+    refreshTransactions(false);
   }, []);
 
   // Load data on mount and set up auto-refresh
@@ -182,13 +203,9 @@ const OverviewPage: React.FC = () => {
     });
 
     // Listen for new transactions (silent refresh to avoid loading spinner flash)
-    const unsubscribeTransaction = EventsOn('transaction:received', (txData: any) => {
-      logger.debug('OverviewPage: Transaction received event', txData);
-      GetRecentTransactions().then(txs => {
-        if (isMountedRef.current) {
-          setRecentTransactions(txs.map(tx => new core.Transaction(tx)));
-        }
-      }).catch(err => { logger.debug('Event refresh: transactions failed', err); });
+    const unsubscribeTransaction = EventsOn('transaction:received', () => {
+      logger.debug('OverviewPage: Transaction received event');
+      refreshTransactions(false);
     });
 
     // Listen for P2P events to update status widgets in real-time (debounced)
@@ -220,7 +237,8 @@ const OverviewPage: React.FC = () => {
       unsubscribeStaking();
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [debouncedSilentRefresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSilentRefresh, refreshTransactions]);
 
   // Determine sync status from real blockchain info (unknown = don't show badge until first poll)
   const isOutOfSync = blockchainInfo ? blockchainInfo.is_out_of_sync : false;

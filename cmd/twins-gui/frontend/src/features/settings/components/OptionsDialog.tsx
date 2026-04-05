@@ -1,8 +1,10 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, AlertTriangle, RotateCcw } from 'lucide-react';
+import { X, AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import { useOptions } from '../../../store/useStore';
 import { GeneralTab, WindowTab, DaemonTab } from './tabs';
+import { SimpleConfirmDialog } from '../../../shared/components/SimpleConfirmDialog';
+import { RestartingOverlay } from '../../../shared/components/RestartingOverlay';
 
 
 interface Tab {
@@ -24,6 +26,7 @@ export const OptionsDialog: React.FC = () => {
     isSaving,
     error,
     restartRequired,
+    platform,
     daemonValues,
     daemonMetadata,
     pendingDaemonChanges,
@@ -36,7 +39,22 @@ export const OptionsDialog: React.FC = () => {
     discardChanges,
     isDirty,
     hasPendingRestartChanges,
+    appliedRestartPending,
+    restartApp,
   } = useOptions();
+
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
+
+  const handleRestart = useCallback(() => {
+    setShowRestartConfirm(true);
+  }, []);
+
+  const handleConfirmRestart = useCallback(async () => {
+    setShowRestartConfirm(false);
+    setIsRestarting(true);
+    await restartApp();
+  }, [restartApp]);
 
   const handleCancel = useCallback(() => {
     discardChanges();
@@ -54,16 +72,21 @@ export const OptionsDialog: React.FC = () => {
     }
   }, [applySettings, closeOptionsDialog]);
 
-  const handleReset = useCallback(async () => {
-    if (confirm(t('messages.resetConfirm'))) {
-      await resetToDefaults();
-    }
-  }, [resetToDefaults, t]);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  const handleResetClick = useCallback(() => {
+    setShowResetConfirm(true);
+  }, []);
+
+  const handleResetConfirm = useCallback(async () => {
+    setShowResetConfirm(false);
+    await resetToDefaults();
+  }, [resetToDefaults]);
 
   // Handle Escape key to close dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isDialogOpen) {
+      if (e.key === 'Escape' && isDialogOpen && !showRestartConfirm) {
         handleCancel();
       }
     };
@@ -75,7 +98,7 @@ export const OptionsDialog: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isDialogOpen, handleCancel]);
+  }, [isDialogOpen, handleCancel, showRestartConfirm]);
 
   if (!isDialogOpen) {
     return null;
@@ -115,6 +138,7 @@ export const OptionsDialog: React.FC = () => {
             settings={workingSettings}
             metadata={metadata}
             onChange={updateSetting}
+            platform={platform}
           />
         );
       default:
@@ -123,7 +147,8 @@ export const OptionsDialog: React.FC = () => {
   };
 
   const isDirtyNow = isDirty;
-  const showRestartBanner = restartRequired || hasPendingRestartChanges;
+  const showRestartBanner = restartRequired || hasPendingRestartChanges || appliedRestartPending;
+  const canRestart = appliedRestartPending && !isDirtyNow;
 
   return (
     <>
@@ -256,10 +281,32 @@ export const OptionsDialog: React.FC = () => {
               gap: '8px',
             }}
           >
-            <AlertTriangle size={16} style={{ color: '#ffa500' }} />
-            <span style={{ color: '#ffcc00', fontSize: '13px' }}>
+            <AlertTriangle size={16} style={{ color: '#ffa500', flexShrink: 0 }} />
+            <span style={{ color: '#ffcc00', fontSize: '13px', flex: 1 }}>
               {t('messages.restartRequired')}
             </span>
+            <button
+              onClick={handleRestart}
+              disabled={!canRestart}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 12px',
+                backgroundColor: canRestart ? '#cc7700' : 'transparent',
+                border: `1px solid ${canRestart ? '#cc7700' : '#665500'}`,
+                borderRadius: '4px',
+                color: canRestart ? '#fff' : '#887744',
+                cursor: canRestart ? 'pointer' : 'not-allowed',
+                fontSize: '12px',
+                fontWeight: 500,
+                flexShrink: 0,
+                opacity: canRestart ? 1 : 0.6,
+              }}
+            >
+              <RefreshCw size={12} />
+              {t('messages.restartButton')}
+            </button>
           </div>
         )}
 
@@ -291,7 +338,7 @@ export const OptionsDialog: React.FC = () => {
         >
           {/* Reset Button (left side) */}
           <button
-            onClick={handleReset}
+            onClick={handleResetClick}
             disabled={isSaving}
             style={{
               display: 'flex',
@@ -367,6 +414,33 @@ export const OptionsDialog: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Restarting Overlay */}
+      {isRestarting && <RestartingOverlay message={t('messages.restarting')} />}
+
+      {/* Reset Confirmation Dialog */}
+      <SimpleConfirmDialog
+        isOpen={showResetConfirm}
+        title={t('messages.resetTitle', 'Reset Settings')}
+        message={t('messages.resetConfirm')}
+        confirmText={t('buttons.reset', 'Reset')}
+        cancelText={t('buttons.cancel')}
+        isDestructive
+        onConfirm={handleResetConfirm}
+        onCancel={() => setShowResetConfirm(false)}
+        zIndex={1010}
+      />
+
+      {/* Restart Confirmation Dialog */}
+      <SimpleConfirmDialog
+        isOpen={showRestartConfirm}
+        title={t('messages.restartConfirmTitle')}
+        message={t('messages.restartConfirm')}
+        confirmText={t('messages.restartButton')}
+        onConfirm={handleConfirmRestart}
+        onCancel={() => setShowRestartConfirm(false)}
+        zIndex={1010}
+      />
     </>
   );
 };

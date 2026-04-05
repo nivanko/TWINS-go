@@ -34,15 +34,15 @@ const (
 const (
 	txFlagWatchOnly    byte = 0x01
 	txFlagIsConflicted byte = 0x02
-	// txFlagIsSynthetic marks entries whose map key differs from their Hash field.
+	// txFlagIsSynthetic marks entries stored under vout=1 (secondary map key).
 	// Used for the staking-reward portion of a combined staker+MN coinstake tx,
-	// stored under deriveSyntheticHash(realHash) so both rewards are visible in the GUI.
+	// stored under txKey{hash, 1} so both rewards are visible in the GUI.
 	txFlagIsSynthetic byte = 0x04
 )
 
 // txCacheEntry pairs a WalletTransaction with whether it occupies a synthetic map key.
 // For normal entries isSynthetic == false and the map key equals tx.Hash.
-// For secondary staking entries isSynthetic == true and the map key is deriveSyntheticHash(tx.Hash).
+// For secondary staking entries isSynthetic == true and the map key is txKey{tx.Hash, 1}.
 type txCacheEntry struct {
 	tx          *WalletTransaction
 	isSynthetic bool
@@ -142,7 +142,7 @@ func (w *Wallet) LoadTransactionCache() error {
 	}
 
 	// Clear existing state before loading cache (prevents merge with stale data)
-	w.transactions = make(map[types.Hash]*WalletTransaction)
+	w.transactions = make(map[txKey]*WalletTransaction)
 	w.utxos = make(map[types.Outpoint]*UTXO)
 	w.balances = make(map[string]*Balance)
 	w.nextSeqNum = 0
@@ -163,12 +163,12 @@ func (w *Wallet) LoadTransactionCache() error {
 			return fmt.Errorf("failed to deserialize tx %d: %w", i, err)
 		}
 		// Synthetic entries (staking reward portion of a combined staker+MN coinstake)
-		// are stored under deriveSyntheticHash so they coexist with the MN primary entry.
-		mapKey := wtx.Hash
+		// are stored under vout=1 so they coexist with the MN primary entry at vout=0.
+		vout := int32(0)
 		if isSynthetic {
-			mapKey = deriveSyntheticHash(wtx.Hash)
+			vout = 1
 		}
-		w.transactions[mapKey] = wtx
+		w.transactions[txKey{wtx.Hash, vout}] = wtx
 		if wtx.SeqNum > maxSeq {
 			maxSeq = wtx.SeqNum
 		}
@@ -274,7 +274,7 @@ func (w *Wallet) snapshotForCache() (entries []txCacheEntry, utxos []*UTXO, bala
 		if tx.BlockHeight < 0 {
 			continue // Skip evicted unconfirmed transactions
 		}
-		entries = append(entries, txCacheEntry{tx: tx, isSynthetic: k != tx.Hash})
+		entries = append(entries, txCacheEntry{tx: tx, isSynthetic: k.Vout != 0})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].tx.BlockHeight != entries[j].tx.BlockHeight {

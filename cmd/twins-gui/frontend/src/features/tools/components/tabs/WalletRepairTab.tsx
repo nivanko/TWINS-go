@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { WalletRepair } from '@wailsjs/go/main/App';
 import { useTools } from '@/store/useStore';
+import { RestartingOverlay } from '@/shared/components/RestartingOverlay';
 
 interface RepairAction {
   id: string;
@@ -26,6 +27,7 @@ const REPAIR_ACTIONS: RepairAction[] = [
 export const WalletRepairTab: React.FC = () => {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [result, setResult] = useState<{ action: string; success: boolean; error?: string; fromRestart?: boolean } | null>(null);
   const { lastRepairResult, setLastRepairResult } = useTools();
 
@@ -43,6 +45,7 @@ export const WalletRepairTab: React.FC = () => {
     setResult(null);
     try {
       await WalletRepair(actionId);
+      setIsRestarting(true);
       setResult({ action: actionId, success: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -145,6 +148,7 @@ export const WalletRepairTab: React.FC = () => {
           </div>
         ))}
       </div>
+      {isRestarting && <RestartingOverlay />}
     </div>
   );
 };

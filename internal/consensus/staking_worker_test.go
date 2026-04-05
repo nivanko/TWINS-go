@@ -86,7 +86,6 @@ func TestIsAtConsensusHeight_NoProvider(t *testing.T) {
 	sw := &StakingWorker{
 		consensusProvider:  nil,
 		blockchain:         &mockBlockchainForStaking{isIBD: false},
-		consensusHeightLag: 10,
 		logger:             newTestLogger(),
 	}
 
@@ -111,50 +110,43 @@ func TestIsAtConsensusHeight_WithProvider(t *testing.T) {
 		name            string
 		localHeight     uint32
 		consensusHeight uint32
-		lag             uint32
 		expectOK        bool
 	}{
 		{
 			name:            "at consensus height",
 			localHeight:     10000,
 			consensusHeight: 10000,
-			lag:             10,
 			expectOK:        true,
 		},
 		{
-			name:            "within allowed lag",
-			localHeight:     9995,
+			name:            "1 block behind",
+			localHeight:     9999,
 			consensusHeight: 10000,
-			lag:             10,
-			expectOK:        true,
+			expectOK:        false,
 		},
 		{
-			name:            "exactly at lag boundary",
-			localHeight:     9990,
+			name:            "3 blocks behind",
+			localHeight:     9997,
 			consensusHeight: 10000,
-			lag:             10,
-			expectOK:        true,
-		},
-		{
-			name:            "beyond allowed lag",
-			localHeight:     9989,
-			consensusHeight: 10000,
-			lag:             10,
 			expectOK:        false,
 		},
 		{
 			name:            "far behind consensus",
 			localHeight:     5000,
 			consensusHeight: 10000,
-			lag:             10,
 			expectOK:        false,
 		},
 		{
-			name:            "ahead of consensus (ok)",
-			localHeight:     10005,
+			name:            "1 block ahead of consensus",
+			localHeight:     10001,
 			consensusHeight: 10000,
-			lag:             10,
-			expectOK:        true,
+			expectOK:        false,
+		},
+		{
+			name:            "far ahead of consensus",
+			localHeight:     10050,
+			consensusHeight: 10000,
+			expectOK:        false,
 		},
 	}
 
@@ -167,7 +159,6 @@ func TestIsAtConsensusHeight_WithProvider(t *testing.T) {
 			}
 
 			mockStorage := NewMockStorage()
-			// Create a dummy block to set as chain tip
 			dummyBlock := &types.Block{
 				Header: &types.BlockHeader{
 					Version: 1,
@@ -176,11 +167,10 @@ func TestIsAtConsensusHeight_WithProvider(t *testing.T) {
 			mockStorage.StoreBlock(dummyBlock)
 
 			sw := &StakingWorker{
-				consensusProvider:  provider,
-				blockchain:         &mockBlockchainForStaking{isIBD: false, blockHeight: tt.localHeight},
-				consensusHeightLag: tt.lag,
-				consensus:          &ProofOfStake{storage: mockStorage},
-				logger:             newTestLogger(),
+				consensusProvider: provider,
+				blockchain:        &mockBlockchainForStaking{isIBD: false, blockHeight: tt.localHeight},
+				consensus:         &ProofOfStake{storage: mockStorage},
+				logger:            newTestLogger(),
 			}
 
 			ok, _ := sw.isAtConsensusHeight()
@@ -200,7 +190,6 @@ func TestIsAtConsensusHeight_ProviderError(t *testing.T) {
 	sw := &StakingWorker{
 		consensusProvider:  provider,
 		blockchain:         &mockBlockchainForStaking{isIBD: false},
-		consensusHeightLag: 10,
 		logger:             newTestLogger(),
 	}
 
@@ -267,10 +256,6 @@ func TestSetBlockBroadcaster(t *testing.T) {
 
 func TestDefaultStakingWorkerConfig(t *testing.T) {
 	config := DefaultStakingWorkerConfig()
-
-	if config.ConsensusHeightLag != 10 {
-		t.Errorf("Expected default ConsensusHeightLag=10, got %d", config.ConsensusHeightLag)
-	}
 
 	if config.MaxSearchTime != 30 {
 		t.Errorf("Expected default MaxSearchTime=30, got %d", config.MaxSearchTime)

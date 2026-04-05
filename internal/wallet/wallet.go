@@ -71,7 +71,7 @@ type Wallet struct {
 	multisigAddrs   map[string]*MultisigAddress // P2SH address -> Multisig info
 
 	// Transaction tracking
-	transactions map[types.Hash]*WalletTransaction
+	transactions map[txKey]*WalletTransaction
 	utxos        map[types.Outpoint]*UTXO
 	balances     map[string]*Balance
 
@@ -205,7 +205,7 @@ func NewWallet(config *Config, storage storage.Storage, logger *logrus.Logger) (
 		accounts:        make(map[uint32]*Account),
 		addresses:       make(map[string]*Address),
 		addressesBinary: make(map[[21]byte]*Address),
-		transactions:    make(map[types.Hash]*WalletTransaction),
+		transactions:    make(map[txKey]*WalletTransaction),
 		utxos:           make(map[types.Outpoint]*UTXO),
 		balances:        make(map[string]*Balance),
 		multisigAddrs:   make(map[string]*MultisigAddress),
@@ -222,6 +222,30 @@ func NewWallet(config *Config, storage storage.Storage, logger *logrus.Logger) (
 	w.addrMgr = NewAddressManager(w)
 
 	return w, nil
+}
+
+// hasTransactionByHash checks if any wallet transaction entry exists for the given hash.
+// Caller must hold w.mu (read or write).
+func (w *Wallet) hasTransactionByHash(hash types.Hash) bool {
+	if _, ok := w.transactions[txKey{hash, 0}]; ok {
+		return true
+	}
+	if _, ok := w.transactions[txKey{hash, 1}]; ok {
+		return true
+	}
+	return false
+}
+
+// getTransactionByHash returns a wallet transaction by hash, checking vout=0 first then vout=1.
+// Caller must hold w.mu (read or write).
+func (w *Wallet) getTransactionByHash(hash types.Hash) (*WalletTransaction, bool) {
+	if tx, ok := w.transactions[txKey{hash, 0}]; ok {
+		return tx, true
+	}
+	if tx, ok := w.transactions[txKey{hash, 1}]; ok {
+		return tx, true
+	}
+	return nil, false
 }
 
 // LoadMultisigAddresses loads all multisig addresses from the wallet database
@@ -1139,11 +1163,19 @@ func (w *Wallet) ListTransactions(count int, skip int) ([]*WalletTransaction, er
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	// Collect all confirmed transactions with recalculated confirmations
+	// Collect all confirmed transactions with recalculated confirmations.
+	// Filter out entries from orphaned blocks — during active staking, locally staked
+	// blocks may be accepted locally but rejected by the network. Their entries persist
+	// in w.transactions until fork recovery runs disconnectBlock. We detect these by
+	// verifying that the block hash at the stored height matches the entry's BlockHash.
 	txs := make([]*WalletTransaction, 0, len(w.transactions))
 	for _, tx := range w.transactions {
 		txCopy := *tx
 		if txCopy.BlockHeight > 0 && currentHeight >= uint32(txCopy.BlockHeight) {
+			// Verify this entry is from a canonical block (not an orphaned staking attempt)
+			if canonicalHash, err := w.storage.GetBlockHashByHeight(uint32(txCopy.BlockHeight)); err == nil && canonicalHash != txCopy.BlockHash {
+				continue // Orphaned block — skip
+			}
 			txCopy.Confirmations = int32(currentHeight) - txCopy.BlockHeight + 1
 		} else if txCopy.BlockHeight == 0 {
 			txCopy.Confirmations = 0
@@ -1156,7 +1188,7 @@ func (w *Wallet) ListTransactions(count int, skip int) ([]*WalletTransaction, er
 	// that re-entered the mempool — present in both maps simultaneously).
 	w.pendingMu.RLock()
 	for _, ptx := range w.pendingTxs {
-		if _, inConfirmed := w.transactions[ptx.Hash]; inConfirmed {
+		if inConfirmed := w.hasTransactionByHash(ptx.Hash); inConfirmed {
 			continue // Already included from w.transactions above
 		}
 		txCopy := *ptx
@@ -1165,27 +1197,16 @@ func (w *Wallet) ListTransactions(count int, skip int) ([]*WalletTransaction, er
 	}
 	w.pendingMu.RUnlock()
 
-	// Sort by block height (desc) first, then by time (desc)
-	// Unconfirmed transactions (height <= 0) appear first in descending order
+	// Sort by time (desc) with deterministic tiebreaker.
+	// All transactions (confirmed, pending, evicted) sort uniformly by time
+	// so that old evicted staking attempts don't displace recent confirmed entries.
 	sort.Slice(txs, func(i, j int) bool {
-		hi, hj := txs[i].BlockHeight, txs[j].BlockHeight
-		// Pending/unconfirmed (height <= 0) sort before confirmed in descending order
-		iPending := hi <= 0
-		jPending := hj <= 0
-		if iPending != jPending {
-			return iPending // pending first
-		}
-		// Both confirmed: higher height first (descending)
-		// Both pending: fall through to time sort
-		if !iPending && hi != hj {
-			return hi > hj
-		}
-		// Secondary sort: time (descending - newest first)
+		// Primary sort: time (descending - newest first)
 		if !txs[i].Time.Equal(txs[j].Time) {
 			return txs[i].Time.After(txs[j].Time)
 		}
 		// Deterministic tiebreaker: SeqNum then TxID to ensure stable order
-		// for transactions with identical height and time (e.g. same block).
+		// for transactions with identical time (e.g. same block).
 		if txs[i].SeqNum != txs[j].SeqNum {
 			return txs[i].SeqNum > txs[j].SeqNum
 		}
@@ -1246,11 +1267,15 @@ func (w *Wallet) ListTransactionsFiltered(params TransactionFilterParams) (Trans
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	// Collect all confirmed transactions with recalculated confirmations
+	// Collect all confirmed transactions with recalculated confirmations.
+	// Filter out entries from orphaned blocks (same logic as ListTransactions).
 	all := make([]*WalletTransaction, 0, len(w.transactions))
 	for _, tx := range w.transactions {
 		txCopy := *tx
 		if txCopy.BlockHeight > 0 && currentHeight >= uint32(txCopy.BlockHeight) {
+			if canonicalHash, err := w.storage.GetBlockHashByHeight(uint32(txCopy.BlockHeight)); err == nil && canonicalHash != txCopy.BlockHash {
+				continue // Orphaned block — skip
+			}
 			txCopy.Confirmations = int32(currentHeight) - txCopy.BlockHeight + 1
 		} else if txCopy.BlockHeight == 0 {
 			txCopy.Confirmations = 0
@@ -1263,7 +1288,7 @@ func (w *Wallet) ListTransactionsFiltered(params TransactionFilterParams) (Trans
 	// that re-entered the mempool — present in both maps simultaneously).
 	w.pendingMu.RLock()
 	for _, ptx := range w.pendingTxs {
-		if _, inConfirmed := w.transactions[ptx.Hash]; inConfirmed {
+		if inConfirmed := w.hasTransactionByHash(ptx.Hash); inConfirmed {
 			continue // Already included from w.transactions above
 		}
 		txCopy := *ptx
@@ -1456,24 +1481,8 @@ func sortTransactions(txs []*WalletTransaction, column, direction string) {
 			} else if txs[i].Amount > txs[j].Amount {
 				cmp = 1
 			}
-		default: // "date" or empty
-			hi, hj := txs[i].BlockHeight, txs[j].BlockHeight
-			iPending := hi <= 0
-			jPending := hj <= 0
-			if iPending != jPending {
-				// Pending sorts as "higher" than confirmed (appears first in desc)
-				if iPending {
-					cmp = 1
-				} else {
-					cmp = -1
-				}
-			} else if !iPending && hi != hj {
-				if hi < hj {
-					cmp = -1
-				} else {
-					cmp = 1
-				}
-			} else if txs[i].Time.Before(txs[j].Time) {
+		default: // "date" or empty — sort by time uniformly
+			if txs[i].Time.Before(txs[j].Time) {
 				cmp = -1
 			} else if txs[i].Time.After(txs[j].Time) {
 				cmp = 1
@@ -1511,7 +1520,7 @@ func (w *Wallet) GetTransaction(hash types.Hash) (*WalletTransaction, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	tx, exists := w.transactions[hash]
+	tx, exists := w.getTransactionByHash(hash)
 	if !exists {
 		// Check pending transactions
 		w.pendingMu.RLock()
@@ -2229,15 +2238,14 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 				FromAddress:   fromAddress,
 			}
 
-			w.transactions[addrTx.TxHash] = wtx
+			w.transactions[txKey{addrTx.TxHash, 0}] = wtx
 
 			// When the wallet is simultaneously the block staker AND a masternode
 			// recipient in the same coinstake, create a second entry for the staking
-			// reward stored under a synthetic hash key.
+			// reward.
 			if extra != nil {
 				w.nextSeqNum++
-				syntheticHash := deriveSyntheticHash(addrTx.TxHash)
-				w.transactions[syntheticHash] = &WalletTransaction{
+				w.transactions[txKey{addrTx.TxHash, 1}] = &WalletTransaction{
 					Tx:            tx,
 					Hash:          addrTx.TxHash, // real hash for explorer linking
 					BlockHash:     blockHash,
@@ -2248,6 +2256,7 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 					Category:      extra.Category,
 					Amount:        extra.NetAmount,
 					Address:       extra.Address,
+					Vout:          1,
 				}
 			}
 		}

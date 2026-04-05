@@ -4,6 +4,7 @@
 package p2p
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -367,5 +368,102 @@ func TestCustomThresholds(t *testing.T) {
 	state, _ = sm.EvaluateSyncNeeded(0, 10000)
 	if state != StateIBD {
 		t.Errorf("expected IBD with custom threshold, got %s", state.String())
+	}
+}
+
+// TestGetConsensusHeightWithFallback_OutboundOnly tests that outbound-only strategy is preferred
+func TestGetConsensusHeightWithFallback_OutboundOnly(t *testing.T) {
+	logger := logrus.New().WithField("test", "statemachine")
+	healthTracker := NewPeerHealthTracker()
+	peerList := NewSyncPeerList(healthTracker)
+	consensus := NewConsensusValidator(healthTracker)
+	sm := NewSyncStateMachine(peerList, healthTracker, consensus, logger.WithField("component", "statemachine"))
+
+	// Add 3 outbound peers (minClusterSize default is 3)
+	for i := 0; i < 3; i++ {
+		addr := "outbound" + string(rune('0'+i))
+		healthTracker.RecordPeerDiscovered(addr, 1000, false, TierBronze, true) // outbound
+	}
+
+	height, confidence, strategy, err := sm.GetConsensusHeightWithFallback()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if height != 1000 {
+		t.Errorf("expected height 1000, got %d", height)
+	}
+	if confidence <= 0 {
+		t.Errorf("expected positive confidence, got %f", confidence)
+	}
+	if strategy != "outbound_only" {
+		t.Errorf("expected strategy outbound_only, got %s", strategy)
+	}
+}
+
+// TestGetConsensusHeightWithFallback_FallsBackToAll tests fallback when no outbound peers
+func TestGetConsensusHeightWithFallback_FallsBackToAll(t *testing.T) {
+	logger := logrus.New().WithField("test", "statemachine")
+	healthTracker := NewPeerHealthTracker()
+	peerList := NewSyncPeerList(healthTracker)
+	consensus := NewConsensusValidator(healthTracker)
+	sm := NewSyncStateMachine(peerList, healthTracker, consensus, logger.WithField("component", "statemachine"))
+
+	// Add only inbound peers (no outbound)
+	for i := 0; i < 5; i++ {
+		addr := "inbound" + string(rune('0'+i))
+		healthTracker.RecordPeerDiscovered(addr, 2000, false, TierBronze, false) // inbound
+	}
+
+	height, confidence, strategy, err := sm.GetConsensusHeightWithFallback()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if height != 2000 {
+		t.Errorf("expected height 2000, got %d", height)
+	}
+	if confidence <= 0 {
+		t.Errorf("expected positive confidence, got %f", confidence)
+	}
+	if strategy != "all_fallback" {
+		t.Errorf("expected strategy all_fallback, got %s", strategy)
+	}
+}
+
+// TestGetConsensusHeightWithFallback_NoPeers tests error when no peers at all
+func TestGetConsensusHeightWithFallback_NoPeers(t *testing.T) {
+	logger := logrus.New().WithField("test", "statemachine")
+	healthTracker := NewPeerHealthTracker()
+	peerList := NewSyncPeerList(healthTracker)
+	consensus := NewConsensusValidator(healthTracker)
+	sm := NewSyncStateMachine(peerList, healthTracker, consensus, logger.WithField("component", "statemachine"))
+
+	_, _, _, err := sm.GetConsensusHeightWithFallback()
+	if err == nil {
+		t.Error("expected error with no peers, got nil")
+	}
+}
+
+// TestGetConsensusHeightWithFallback_OutboundDisagree tests that fallback does NOT
+// trigger when outbound peers exist but disagree (preserves Sybil resistance)
+func TestGetConsensusHeightWithFallback_OutboundDisagree(t *testing.T) {
+	logger := logrus.New().WithField("test", "statemachine")
+	healthTracker := NewPeerHealthTracker()
+	peerList := NewSyncPeerList(healthTracker)
+	consensus := NewConsensusValidator(healthTracker)
+	sm := NewSyncStateMachine(peerList, healthTracker, consensus, logger.WithField("component", "statemachine"))
+
+	// Add 2 outbound peers at wildly different heights (minClusterSize=3 so no cluster forms)
+	healthTracker.RecordPeerDiscovered("out1", 1000, false, TierBronze, true)
+	healthTracker.RecordPeerDiscovered("out2", 50000, false, TierBronze, true)
+
+	// Add 5 inbound peers that agree (would form consensus if fallback triggered)
+	for i := 0; i < 5; i++ {
+		healthTracker.RecordPeerDiscovered(fmt.Sprintf("in%d", i), 2000, false, TierBronze, false)
+	}
+
+	// Should fail — outbound peers exist but disagree, must NOT fall back to inbound
+	_, _, strategy, err := sm.GetConsensusHeightWithFallback()
+	if err == nil {
+		t.Errorf("expected error when outbound peers disagree, but got strategy=%s", strategy)
 	}
 }

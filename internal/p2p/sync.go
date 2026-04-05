@@ -1153,20 +1153,32 @@ func (bs *BlockchainSyncer) tryReactiveIndexRecovery(failHeight uint32) error {
 
 // RebuildPeerList rebuilds the sync peer rotation list
 func (bs *BlockchainSyncer) RebuildPeerList() {
-	// Get all peers from health tracker
-	allPeers := bs.healthTracker.GetAllPeers()
-
-	// If health tracker has no peers, seed it from server's peer list
-	if len(allPeers) == 0 && bs.server != nil {
-		bs.logger.Debug("Health tracker empty, seeding from server peer list")
+	// Always sync health tracker with server's actual connected peers.
+	// This ensures newly connected peers (especially outbound) are registered
+	// and stale entries from disconnected peers are pruned.
+	if bs.server != nil {
 		serverPeers := bs.server.GetPeersList()
 
+		// Build connected address set for pruning
+		connectedAddrs := make(map[string]struct{}, len(serverPeers))
+		for _, peer := range serverPeers {
+			if peer.IsHandshakeComplete() {
+				connectedAddrs[peer.GetAddress().String()] = struct{}{}
+			}
+		}
+
+		// Prune stale entries for peers that are no longer connected
+		if pruned := bs.healthTracker.PruneDisconnectedPeers(connectedAddrs); pruned > 0 {
+			bs.logger.WithField("pruned", pruned).
+				Debug("Pruned stale entries from health tracker")
+		}
+
+		// Merge connected peers into health tracker (registers any missing peers)
 		for _, peer := range serverPeers {
 			if peer.IsHandshakeComplete() {
 				addr := peer.GetAddress().String()
 				version := peer.GetVersion()
 
-				// Determine if this is a masternode and its tier
 				isMasternode := false
 				tier := TierNone
 				tipHeight := uint32(0)
@@ -1175,7 +1187,6 @@ func (bs *BlockchainSyncer) RebuildPeerList() {
 					tipHeight = uint32(version.StartHeight)
 					isMasternode = (version.Services & ServiceFlagMasternode) != 0
 
-					// Detect tier from service flags
 					if version.Services&ServiceFlagMasternodePlat != 0 {
 						tier = TierPlatinum
 					} else if version.Services&ServiceFlagMasternodeGold != 0 {
@@ -1187,22 +1198,14 @@ func (bs *BlockchainSyncer) RebuildPeerList() {
 					}
 				}
 
-				// Add to health tracker so it can be considered "healthy"
-				// Record direction: outbound if we initiated the connection
 				isOutbound := !peer.inbound
 				bs.healthTracker.RecordPeerDiscovered(addr, tipHeight, isMasternode, tier, isOutbound)
-
-				// Give peer a reference to the health tracker for EffectivePeerHeight()
 				peer.SetHealthTracker(bs.healthTracker)
 			}
 		}
-
-		// Now get the peers from health tracker (should be populated)
-		allPeers = bs.healthTracker.GetAllPeers()
-		bs.logger.WithField("peers_seeded", len(allPeers)).
-			Debug("Seeded health tracker from server peers")
 	}
 
+	allPeers := bs.healthTracker.GetAllPeers()
 	bs.peerList.Rebuild(allPeers)
 
 	bs.logger.WithField("peer_count", len(bs.peerList.GetAllPeers())).
@@ -1322,6 +1325,9 @@ func (bs *BlockchainSyncer) syncMaintenance() {
 		case <-ticker.C:
 			bs.maintainSync()
 
+			// Prune unhealthy peers - disconnects outbound peers with health score below threshold
+			bs.pruneUnhealthyPeers()
+
 			// Prune stale peers - disconnects outbound peers significantly behind consensus
 			// Runs even during IBD: stale peers are useless for sync and waste connection slots
 			bs.pruneStalePeers()
@@ -1362,6 +1368,41 @@ func (bs *BlockchainSyncer) syncMaintenance() {
 
 		case <-bs.quit:
 			return
+		}
+	}
+}
+
+// pruneUnhealthyPeers disconnects outbound peers whose health score has dropped
+// below HealthThreshold. Frees connection slots for healthier replacement peers.
+// Never disconnects the peer we're currently syncing with.
+func (bs *BlockchainSyncer) pruneUnhealthyPeers() {
+	if bs.healthTracker == nil || bs.server == nil {
+		return
+	}
+
+	// Get current sync peer to avoid disconnecting it
+	var currentSyncPeer string
+	if sp := bs.syncPeer.Load(); sp != nil {
+		currentSyncPeer = sp.GetAddress().String()
+	}
+
+	unhealthyPeers := bs.healthTracker.GetUnhealthyPeers()
+	for _, addr := range unhealthyPeers {
+		// Never disconnect the peer we're currently syncing with
+		if currentSyncPeer != "" && addr == currentSyncPeer {
+			continue
+		}
+
+		score := bs.healthTracker.GetHealthScore(addr)
+		bs.logger.WithFields(logrus.Fields{
+			"peer":             addr,
+			"health_score":     score,
+			"health_threshold": HealthThreshold,
+		}).Info("Disconnecting unhealthy peer")
+
+		if err := bs.server.DisconnectPeer(addr); err != nil {
+			bs.logger.WithError(err).WithField("peer", addr).
+				Debug("Failed to disconnect unhealthy peer")
 		}
 	}
 }
