@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check } from 'lucide-react';
+import { AlertTriangle, Check, Copy, RotateCw, X } from 'lucide-react';
 import { PaymentStatsResponse, PaymentStatsEntry } from '@/shared/types/masternode.types';
 import { useDisplayUnits } from '@/shared/hooks/useDisplayUnits';
 import { RefreshCountdown } from '@/shared/components/RefreshCountdown';
@@ -75,6 +75,10 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
   // Data state — component owns its own data fetching
   const [stats, setStats] = useState<PaymentStatsResponse | null>(null);
   const [isFetching, setIsFetching] = useState(false);
+  // Error state for the most recent fetch. Null when the last fetch succeeded
+  // or the user dismissed the banner. Stays set across polls until cleared.
+  // We deliberately do NOT clear `stats` on error so stale data remains visible.
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Auto-refresh countdown
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
@@ -102,10 +106,15 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
       });
       if (mountedRef.current && result) {
         setStats(result as PaymentStatsResponse);
+        setFetchError(null);
         onStatsLoaded?.(result as PaymentStatsResponse);
       }
     } catch (error) {
       console.error('Failed to fetch payment stats:', error);
+      if (mountedRef.current) {
+        // Keep existing `stats` untouched so stale data stays visible.
+        setFetchError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       if (mountedRef.current) {
         setIsFetching(false);
@@ -176,10 +185,22 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
     setCountdown(REFRESH_SECONDS);
   }, [fetchData]);
 
+  // Retry the last fetch using current params. Also resets the auto-refresh
+  // countdown so the user is not immediately polled again after retrying.
+  const handleRetry = useCallback(() => {
+    handleRefresh();
+  }, [handleRefresh]);
+
+  const handleDismissError = useCallback(() => {
+    setFetchError(null);
+  }, []);
+
   const showLoading = isLoading || isFetching;
 
-  // Loading skeleton
-  if (showLoading && !stats) {
+  // Loading skeleton — only shown while actively fetching with no prior data
+  // and no error. If an error occurred on the first fetch, skip the skeleton
+  // and render the error banner instead so the user knows what happened.
+  if (showLoading && !stats && !fetchError) {
     return (
       <div style={{ padding: '16px', color: '#999', fontSize: '12px' }}>
         {t('paymentStats.loading')}
@@ -187,7 +208,26 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
     );
   }
 
-  // No data
+  // First-load error: show the banner standalone so the user can see what
+  // failed and retry without being told "No data available" (which would be
+  // misleading when the real problem is a failed RPC call).
+  if (!stats && fetchError) {
+    return (
+      <div style={{ padding: '16px' }}>
+        <PaymentStatsErrorBanner
+          title={t('paymentStats.fetchError')}
+          message={fetchError}
+          retryLabel={t('paymentStats.retry')}
+          dismissLabel={t('paymentStats.dismiss')}
+          onRetry={handleRetry}
+          onDismiss={handleDismissError}
+          isRetrying={isFetching}
+        />
+      </div>
+    );
+  }
+
+  // No data (genuinely empty database, no error)
   if (!stats || !stats.entries?.length) {
     return (
       <div style={{ padding: '16px', color: '#999', fontSize: '12px' }}>
@@ -220,14 +260,28 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
           value={formatNumber(stats.totalPayments)}
         />
         <SummaryCard
-          label={t('paymentStats.summary.uniqueMasternodes')}
-          value={formatNumber(stats.uniqueMasternodes)}
+          label={t('paymentStats.summary.uniquePaymentAddresses')}
+          value={formatNumber(stats.uniquePaymentAddresses)}
         />
         <SummaryCard
           label={t('paymentStats.summary.scannedBlocks')}
           value={`${formatNumber(stats.lowestBlock)} / ${formatNumber(stats.highestBlock)}`}
         />
       </div>
+
+      {/* Fetch error banner — shown above the refresh countdown when a fetch
+          fails while stale data is still on screen. Does NOT clear stats. */}
+      {fetchError && (
+        <PaymentStatsErrorBanner
+          title={t('paymentStats.fetchError')}
+          message={fetchError}
+          retryLabel={t('paymentStats.retry')}
+          dismissLabel={t('paymentStats.dismiss')}
+          onRetry={handleRetry}
+          onDismiss={handleDismissError}
+          isRetrying={isFetching}
+        />
+      )}
 
       {/* Refresh countdown */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
@@ -380,6 +434,92 @@ const PaginationButton: React.FC<{ onClick: () => void; disabled: boolean; child
   >
     {children}
   </button>
+);
+
+interface PaymentStatsErrorBannerProps {
+  title: string;
+  message: string;
+  retryLabel: string;
+  dismissLabel: string;
+  onRetry: () => void;
+  onDismiss: () => void;
+  isRetrying: boolean;
+}
+
+// Inline amber warning banner shown when a payment stats fetch fails. Uses the
+// established WindowTab amber palette (#4a2a00 bg / #664400 border / #ffa500
+// icon / #ffcc00 text) so it is clearly distinct from the grey empty-data
+// message rendered when the database is genuinely empty.
+const PaymentStatsErrorBanner: React.FC<PaymentStatsErrorBannerProps> = ({
+  title,
+  message,
+  retryLabel,
+  dismissLabel,
+  onRetry,
+  onDismiss,
+  isRetrying,
+}) => (
+  <div
+    role="alert"
+    style={{
+      padding: '10px 14px',
+      marginBottom: '8px',
+      backgroundColor: '#4a2a00',
+      border: '1px solid #664400',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: '10px',
+    }}
+  >
+    <AlertTriangle size={16} style={{ color: '#ffa500', flexShrink: 0, marginTop: '1px' }} />
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ color: '#ffcc00', fontSize: '12px', fontWeight: 'bold', marginBottom: '2px' }}>
+        {title}
+      </div>
+      <div style={{ color: '#ddd', fontSize: '11px', wordBreak: 'break-word' }}>
+        {message}
+      </div>
+    </div>
+    <button
+      onClick={onRetry}
+      disabled={isRetrying}
+      title={retryLabel}
+      style={{
+        padding: '4px 10px',
+        fontSize: '11px',
+        backgroundColor: isRetrying ? '#2a2a2a' : '#3a3a3a',
+        color: isRetrying ? '#666' : '#ffcc00',
+        border: '1px solid #664400',
+        borderRadius: '2px',
+        cursor: isRetrying ? 'default' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        flexShrink: 0,
+      }}
+    >
+      <RotateCw size={11} />
+      {retryLabel}
+    </button>
+    <button
+      onClick={onDismiss}
+      aria-label={dismissLabel}
+      title={dismissLabel}
+      style={{
+        padding: '2px',
+        background: 'none',
+        border: 'none',
+        color: '#ffcc00',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <X size={14} />
+    </button>
+  </div>
 );
 
 interface PaymentRowProps {

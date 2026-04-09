@@ -25,6 +25,14 @@ type StakeableUTXO struct {
 // Legacy: wallet.cpp:2413 - uses 10 for regular UTXOs (coinbase/coinstake use maturity)
 const MinStakeConfirmations = 10
 
+// MinStakeSplitThresholdSatoshis is the hard floor for stake splitting.
+// A coinstake is only split into two outputs when totalReward >= this value.
+// Set to 100000 TWINS so each half is at least 50000 TWINS, safely above the
+// legacy StakingMinInput of 12000 TWINS (chainparams.cpp:243, main.cpp:3978).
+// This prevents the wallet from producing split coinstakes whose vout[1] would
+// be rejected by legacy C++ nodes with "CheckBlock() : stake under min. stake value".
+const MinStakeSplitThresholdSatoshis int64 = 100000 * 100000000
+
 // GetStakeableUTXOs returns all wallet UTXOs eligible for staking.
 // Filtering criteria:
 // - Minimum 10 confirmations (MinStakeConfirmations) - legacy wallet.cpp:2413
@@ -310,8 +318,14 @@ func (w *Wallet) CreateCoinstakeTx(
 	// Legacy: stakeinput.cpp:221-223
 	// if (nTotal / 2 > (CAmount)(pwallet->nStakeSplitThreshold * COIN))
 	//     vout.emplace_back(CTxOut(0, scriptPubKey)); // Add second output
+	// Hard floor: never split a coinstake whose total is below the minimum
+	// split threshold, regardless of the user-configured stakeSplitThreshold.
+	// This guarantees each post-split output is comfortably above legacy's
+	// StakingMinInput (12000 TWINS) so blocks are accepted by legacy C++ nodes.
 	stakeSplitThreshold, _ := w.GetStakeSplitThreshold()
-	shouldSplit := stakeSplitThreshold > 0 && (totalReward/2) > stakeSplitThreshold
+	shouldSplit := stakeSplitThreshold > 0 &&
+		totalReward >= MinStakeSplitThresholdSatoshis &&
+		(totalReward/2) > stakeSplitThreshold
 
 	if shouldSplit {
 		// Split into two outputs for better UTXO distribution

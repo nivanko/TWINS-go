@@ -359,11 +359,5 @@ func (a *App) applyWalletSetting(key string) {
 		if err := w.SetStakeSplitThreshold(threshold); err != nil {
 			logrus.WithError(err).Warn("Failed to apply stake split threshold to wallet")
 		}
-	case "fAutoCombineRewards":
-		enabled := a.settingsService.GetBool(key)
-		threshold := a.settingsService.GetInt64("nStakeSplitThreshold")
-		if err := w.SetAutoCombineRewards(enabled, threshold); err != nil {
-			logrus.WithError(err).Warn("Failed to apply auto-combine rewards to wallet")
-		}
 	}
 }

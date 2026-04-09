@@ -162,10 +162,23 @@ func (n *Node) InitWallet(cfg WalletConfig) error {
 	n.Wallet = w
 	n.mu.Unlock()
 
+	// Wire autocombine from config if available (config stores TWINS, wallet uses satoshis)
+	if n.ConfigManager != nil {
+		acEnabled := n.ConfigManager.GetBool("wallet.autoCombine")
+		acTargetTWINS := n.ConfigManager.GetInt64("wallet.autoCombineTarget")
+		acTargetSatoshis := acTargetTWINS * 100_000_000
+		acCooldown := n.ConfigManager.GetInt("wallet.autoCombineCooldown")
+		if acCooldown <= 0 {
+			acCooldown = 600 // default 10 minutes
+		}
+		w.SetAutoCombineConfig(acEnabled, acTargetSatoshis, acCooldown)
+	}
+
 	if n.Config.OnProgress != nil {
 		n.Config.OnProgress("wallet", 100)
 	}
 	n.logger.Info("Wallet initialized")
+	n.logger.Info("autocombinerewards RPC removed; use setautocombine/getautocombine")
 	return nil
 }
 

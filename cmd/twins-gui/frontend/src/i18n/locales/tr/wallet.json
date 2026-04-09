@@ -119,12 +119,6 @@
     "noRequests": "Henüz ödeme talebi yok",
     "show": "Göster",
     "remove": "Kaldır",
-    "contextMenu": {
-      "copyLabel": "Etiketi kopyala",
-      "copyAddress": "Adresi kopyala",
-      "copyMessage": "Mesajı kopyala",
-      "copyAmount": "Tutarı kopyala"
-    },
     "table": {
       "date": "Tarih",
       "label": "Etiket",

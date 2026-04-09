@@ -9,6 +9,7 @@ import { createAppSlice } from './slices/appSlice';
 import { createSendSlice } from './slices/sendSlice';
 import { createCoinControlSlice } from './slices/coinControlSlice';
 import { createReceiveSlice } from './slices/receiveSlice';
+import { createReceivingAddressesSlice } from './slices/receivingAddressesSlice';
 import { createTransactionsSlice } from './slices/transactionsSlice';
 import { createExplorerSlice } from './slices/explorerSlice';
 import { createOptionsSlice } from './slices/optionsSlice';
@@ -34,6 +35,7 @@ export const useStore = create<StoreState>()(
           ...createSendSlice(...a),
           ...createCoinControlSlice(...a),
           ...createReceiveSlice(...a),
+          ...createReceivingAddressesSlice(...a),
           ...createTransactionsSlice(...a),
           ...createExplorerSlice(...a),
           ...createOptionsSlice(...a),
@@ -183,6 +185,7 @@ export const useReceive = () =>
     // State
     currentAddress: state.currentAddress,
     receivingAddresses: state.receivingAddresses,
+    addressBalances: state.addressBalances,
     paymentRequests: state.paymentRequests,
     reuseAddress: state.reuseAddress,
     formState: state.formState,
@@ -194,12 +197,6 @@ export const useReceive = () =>
     isCreatingRequest: state.isCreatingRequest,
     error: state.error,
     // Actions
-    setCurrentAddress: state.setCurrentAddress,
-    setReceivingAddresses: state.setReceivingAddresses,
-    addReceivingAddress: state.addReceivingAddress,
-    setPaymentRequests: state.setPaymentRequests,
-    addPaymentRequest: state.addPaymentRequest,
-    removePaymentRequest: state.removePaymentRequest,
     setReuseAddress: state.setReuseAddress,
     updateFormField: state.updateFormField,
     clearForm: state.clearForm,
@@ -207,15 +204,15 @@ export const useReceive = () =>
     closeAddressesDialog: state.closeAddressesDialog,
     openRequestDialog: state.openRequestDialog,
     closeRequestDialog: state.closeRequestDialog,
+    selectAddressForRequest: state.selectAddressForRequest,
     fetchReceivingAddresses: state.fetchReceivingAddresses,
+    fetchAddressBalances: state.fetchAddressBalances,
     fetchPaymentRequests: state.fetchPaymentRequests,
     fetchCurrentAddress: state.fetchCurrentAddress,
     generateNewAddress: state.generateNewAddress,
     createPaymentRequest: state.createPaymentRequest,
     deletePaymentRequest: state.deletePaymentRequest,
-    setError: state.setError,
     clearError: state.clearError,
-    resetReceiveState: state.resetReceiveState,
   })));
 
 export const useTransactions = () =>
@@ -307,6 +304,54 @@ export const useTools = () =>
     setToolsActiveTab: state.setToolsActiveTab,
     lastRepairResult: state.lastRepairResult,
     setLastRepairResult: state.setLastRepairResult,
+  })));
+
+export const useReceivingAddresses = () =>
+  useStore(useShallow((state) => ({
+    // Current page data
+    rows: state.recvAddrsRows,
+    total: state.recvAddrsTotal,
+    totalAll: state.recvAddrsTotalAll,
+    totalPages: state.recvAddrsTotalPages,
+    isLoading: state.recvAddrsIsLoading,
+    error: state.recvAddrsError,
+
+    // Pagination
+    currentPage: state.recvAddrsCurrentPage,
+    pageSize: state.recvAddrsPageSize,
+
+    // Filter state
+    hideZeroBalance: state.recvAddrsHideZeroBalance,
+    searchText: state.recvAddrsSearchText,
+
+    // Sort state
+    sortColumn: state.recvAddrsSortColumn,
+    sortDirection: state.recvAddrsSortDirection,
+
+    // Data loading
+    fetchPage: state.recvAddrsFetchPage,
+
+    // Pagination actions
+    setPage: state.recvAddrsSetPage,
+    setPageSize: state.recvAddrsSetPageSize,
+    goToFirstPage: state.recvAddrsGoToFirstPage,
+    goToPrevPage: state.recvAddrsGoToPrevPage,
+    goToNextPage: state.recvAddrsGoToNextPage,
+    goToLastPage: state.recvAddrsGoToLastPage,
+
+    // Filter actions
+    setHideZeroBalance: state.recvAddrsSetHideZeroBalance,
+    setSearchText: state.recvAddrsSetSearchText,
+
+    // Sort actions
+    setSortColumn: state.recvAddrsSetSortColumn,
+    toggleSortDirection: state.recvAddrsToggleSortDirection,
+
+    // Lifecycle
+    resetTransient: state.recvAddrsResetTransient,
+
+    // Export
+    exportCSV: state.recvAddrsExportCSV,
   })));
 
 export const useSignVerify = () =>

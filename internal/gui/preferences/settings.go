@@ -20,7 +20,6 @@ type GUISettings struct {
 
 	// === Wallet Settings ===
 	StakeSplitThreshold int64 `json:"nStakeSplitThreshold"` // Stake split threshold in satoshis
-	AutoCombineRewards  bool  `json:"fAutoCombineRewards"`  // Auto-combine staking rewards
 
 	// === Coin Control Settings ===
 	CoinControlFeatures   bool `json:"fCoinControlFeatures"`   // Enable coin control dialog

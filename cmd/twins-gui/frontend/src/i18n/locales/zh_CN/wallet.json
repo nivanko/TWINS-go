@@ -119,12 +119,6 @@
     "noRequests": "暂无付款请求",
     "show": "显示",
     "remove": "删除",
-    "contextMenu": {
-      "copyLabel": "复制标签",
-      "copyAddress": "复制地址",
-      "copyMessage": "复制消息",
-      "copyAmount": "复制金额"
-    },
     "table": {
       "date": "日期",
       "label": "标签",

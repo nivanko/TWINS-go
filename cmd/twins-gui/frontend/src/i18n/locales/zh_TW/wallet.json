@@ -119,12 +119,6 @@
     "noRequests": "尚無付款請求",
     "show": "顯示",
     "remove": "移除",
-    "contextMenu": {
-      "copyLabel": "複製標記",
-      "copyAddress": "複製位址",
-      "copyMessage": "複製訊息",
-      "copyAmount": "複製金額"
-    },
     "table": {
       "date": "日期",
       "label": "標記",

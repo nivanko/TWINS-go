@@ -425,6 +425,12 @@ func (ms *MockStorage) IterateHashToHeight(fn func(hash types.Hash, height uint3
 func (ms *MockStorage) CleanOrphanedBlocks(maxValidHeight uint32) (int, error) {
 	return 0, nil
 }
+func (ms *MockStorage) UnspendUTXOsBySpendingTx(txHashes map[types.Hash]struct{}) (int, error) {
+	return 0, nil
+}
+func (ms *MockStorage) FindAndMarkSpendersForOutpoints(outpoints map[types.Outpoint]struct{}) (map[types.Outpoint]storage.SpenderInfo, error) {
+	return nil, nil
+}
 
 // MockBlockchain implements BlockchainInterface for consensus integration tests
 type MockBlockchain struct {

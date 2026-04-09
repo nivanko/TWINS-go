@@ -117,6 +117,11 @@ type StakingConfig struct {
 	// Value is in satoshis (1 TWINS = 100,000,000 satoshis)
 	// Legacy: -reservebalance=<amt> (default: 0)
 	ReserveBalance int64
+
+	// StakeSplitThreshold is the amount above which staking outputs are split into two
+	// Value is in TWINS (whole coins, e.g. 20000)
+	// Legacy: was in wallet.dat, now in twinsd.yml
+	StakeSplitThreshold int64
 }
 
 // MasternodeConfig contains masternode-specific settings
@@ -150,6 +155,11 @@ type WalletConfig struct {
 	SpendZeroConfChange bool   // Allow spending unconfirmed change (legacy: -spendzeroconfchange)
 	CreateWalletBackups int    // Auto-backup count, 0 to disable (legacy: -createwalletbackups)
 	BackupPath          string // Custom backup directory (legacy: -backuppath)
+
+	// === Auto-Combine Inputs (UTXO Consolidation) ===
+	AutoCombine         bool  // Enable automatic UTXO consolidation
+	AutoCombineTarget   int64 // Target amount in TWINS (whole coins, e.g. 200000)
+	AutoCombineCooldown int   // Minimum seconds between consolidation cycles (default 600)
 
 	// === HD Wallet Creation (Legacy C++ Compatible) ===
 	// SECURITY WARNING: These fields are for CLI-only use during wallet creation.

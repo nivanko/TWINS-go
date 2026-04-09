@@ -15,6 +15,7 @@ export type TypeFilter =
   | 'mined'
   | 'minted'
   | 'masternode'
+  | 'consolidation'
   | 'other';
 export type WatchOnlyFilter = 'all' | 'yes' | 'no';
 export type SortColumn = 'date' | 'type' | 'address' | 'amount';
@@ -152,7 +153,7 @@ const STORAGE_KEY_PAGE_SIZE = 'twins_transactionPageSize';
 const validDateFilters: DateFilter[] = ['all', 'today', 'week', 'month', 'lastMonth', 'year', 'range'];
 const validTypeFilters: TypeFilter[] = [
   'all', 'mostCommon', 'received', 'sent', 'toYourself', 'mined', 'minted',
-  'masternode', 'other'
+  'masternode', 'consolidation', 'other'
 ];
 
 function loadDateFilter(): DateFilter {

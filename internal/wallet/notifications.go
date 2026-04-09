@@ -48,6 +48,15 @@ func (w *Wallet) NotifyBlocks(blocks []*types.Block) error {
 		w.heightMu.Unlock()
 	}
 
+	// Trigger autocombine worker (non-blocking).
+	// Read worker pointer under mu.RLock to avoid race with Start/StopAutoCombine.
+	w.mu.RLock()
+	acWorker := w.autoCombineWorker
+	w.mu.RUnlock()
+	if acWorker != nil {
+		acWorker.NotifyBlock()
+	}
+
 	return nil
 }
 
@@ -153,6 +162,8 @@ func (w *Wallet) processBlock(block *types.Block) error {
 			txHash := tx.Hash()
 			blockHash := block.Hash()
 			txTime := time.Unix(int64(block.Header.Timestamp), 0)
+			// Look up comment from locally-sent transactions (e.g. "autocombine")
+			txComment := w.sentTxComments[txHash]
 			walletTx := &WalletTransaction{
 				Tx:            tx,
 				Hash:          txHash,
@@ -166,6 +177,7 @@ func (w *Wallet) processBlock(block *types.Block) error {
 				Fee:           txFee,
 				Address:       address,
 				FromAddress:   fromAddress,
+				Comment:       txComment,
 			}
 
 			w.transactions[txKey{txHash, 0}] = walletTx
@@ -498,8 +510,39 @@ func (w *Wallet) categorizeTransactionLocked(
 		}
 		// We are the staker (spentAmount > 0). However, the same wallet may also own
 		// a masternode payment address that received the MN portion of this block
-		// reward. Detect this by checking for wallet-owned outputs that go to addresses
-		// NOT in the staking input set — those outputs are masternode payments.
+		// reward. We use a two-pass detection strategy:
+		//
+		// Pass 1 (address-based, fast path): iterate wallet-owned outputs and accept
+		// those whose address is NOT in the staking input set. This handles the
+		// common case where the MN payout address differs from every staking input
+		// address.
+		//
+		// Pass 2 (structural-position fallback): if Pass 1 finds nothing, fall back
+		// to a position-based check. In TWINS PoS coinstakes the canonical output
+		// layout is:
+		//
+		//   [output[0]=empty, stake_return..., mn_payment, dev_payment]
+		//
+		// The MN payment sits at structural position len-2 because TWINS always
+		// pays the dev fund at the last output (see pkg/types/chainparams.go
+		// DevAddress and internal/masternode/payment_tracker.go
+		// extractMasternodePaymentAtHeight for the canonical extraction logic).
+		// Pass 2 treats tx.Outputs[len-2] as the MN payment when it is wallet-owned
+		// with non-empty script and value > 0.
+		//
+		// Pass 2 fires only when Pass 1 yielded mnAmount == 0 AND len(tx.Outputs)
+		// >= 4 (the minimum TWINS coinstake layout: empty + stake + mn + dev). The
+		// len >= 4 guard prevents false positives on hypothetical configurations
+		// without a dev fund output, where a pure stake with split outputs could
+		// otherwise be misclassified as having an MN payment.
+		//
+		// This two-pass strategy fixes a bug where coinstakes whose MN payout
+		// address overlapped with a staking input address were misclassified as
+		// stake rewards. The address-based Pass 1 alone cannot distinguish a
+		// staker's own-address return from an MN payment on the same address; the
+		// structural Pass 2 resolves that ambiguity by using the canonical TWINS
+		// output position. See the `?-research-verify-payment-stats-tab` research
+		// file in team-management/tasks/done/ for the full root-cause analysis.
 		var mnAmount int64
 		var mnAddress string
 		for _, output := range tx.Outputs {
@@ -509,6 +552,17 @@ func (w *Wallet) categorizeTransactionLocked(
 					if mnAddress == "" {
 						mnAddress = addr
 					}
+				}
+			}
+		}
+		// Pass 2: structural-position fallback for the address-overlap case.
+		if mnAmount == 0 && len(tx.Outputs) >= 4 {
+			mnIdx := len(tx.Outputs) - 2
+			candidate := tx.Outputs[mnIdx]
+			if len(candidate.ScriptPubKey) > 0 && candidate.Value > 0 {
+				if addr, isOurs := w.isOurScriptLocked(candidate.ScriptPubKey); isOurs {
+					mnAmount = candidate.Value
+					mnAddress = addr
 				}
 			}
 		}
@@ -763,6 +817,8 @@ func (w *Wallet) OnMempoolTransaction(tx *types.Transaction) {
 	if category == TxCategoryToSelf {
 		pendingTxFee = -netAmount
 	}
+	// Look up comment from locally-sent transactions (e.g. "autocombine")
+	pendingComment := w.sentTxComments[txHash]
 	walletTx := &WalletTransaction{
 		Tx:          tx,
 		Hash:        txHash,
@@ -773,6 +829,7 @@ func (w *Wallet) OnMempoolTransaction(tx *types.Transaction) {
 		Fee:         pendingTxFee,
 		Address:     address,
 		FromAddress: fromAddress,
+		Comment:     pendingComment,
 	}
 	w.pendingTxs[txHash] = walletTx
 

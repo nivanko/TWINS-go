@@ -242,7 +242,7 @@ func (a *App) getStaticCategories() map[string][]string {
 			"mnsync", "setmocktime", "settxfee", "spork",
 		},
 		"Wallet": {
-			"addmultisigaddress", "autocombinerewards", "backupwallet",
+			"addmultisigaddress", "setautocombine", "getautocombine", "backupwallet",
 			"createmultisig", "dumpprivkey", "dumphdinfo", "dumpwallet",
 			"encryptwallet", "getaccount", "getaccountaddress",
 			"getaddressesbyaccount", "getaddressinfo", "getbalance",

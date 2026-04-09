@@ -48,6 +48,9 @@ export function getTransactionTypeIcon(type: string): string {
     case 'send_to_other':
       return txOutputIcon;
 
+    // UTXO consolidation uses bidirectional arrows
+    case 'consolidation':
+
     // Self-transfers and other types use bidirectional arrows
     case 'send_to_self':
     case 'obfuscation_denominate':
@@ -178,6 +181,7 @@ export function getTransactionTypeLabel(type: string): string {
     'send': 'Sent to',
     'send_to_other': 'Sent to',
     'send_to_self': 'Payment to yourself',
+    'consolidation': 'UTXO Consolidation',
     'receive': 'Received with',
     'receive_from_other': 'Received with',
     'receive_with_obfuscation': 'Obfuscation',

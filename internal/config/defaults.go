@@ -100,8 +100,9 @@ func DefaultConfig() *Config {
 			CreateWalletBackups: 10,        // Keep 10 backups (legacy: -createwalletbackups default)
 		},
 		Staking: StakingConfig{
-			Enabled:        false, // Staking disabled by default
-			ReserveBalance: 0,     // No reserve by default
+			Enabled:             false,          // Staking disabled by default
+			ReserveBalance:      0,              // No reserve by default
+			StakeSplitThreshold: 200000, // 200,000 TWINS
 		},
 		Sync: SyncConfig{
 			BootstrapMinPeers:         4,        // Minimum peers before starting sync

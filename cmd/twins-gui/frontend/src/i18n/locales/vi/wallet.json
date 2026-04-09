@@ -119,12 +119,6 @@
     "noRequests": "Chưa có yêu cầu thanh toán",
     "show": "Hiển thị",
     "remove": "Xóa",
-    "contextMenu": {
-      "copyLabel": "Sao chép nhãn",
-      "copyAddress": "Sao chép địa chỉ",
-      "copyMessage": "Sao chép tin nhắn",
-      "copyAmount": "Sao chép số lượng"
-    },
     "table": {
       "date": "Ngày",
       "label": "Nhãn",

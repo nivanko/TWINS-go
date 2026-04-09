@@ -65,6 +65,9 @@ const (
 
 	// TxTypeSendToSelf represents an internal transfer to self
 	TxTypeSendToSelf TransactionType = "send_to_self"
+
+	// TxTypeConsolidation represents a UTXO consolidation (autocombine) transaction
+	TxTypeConsolidation TransactionType = "consolidation"
 )
 
 // Transaction represents a wallet transaction
@@ -1006,4 +1009,46 @@ type TransactionPage struct {
 	Page         int           `json:"page"`        // current page (1-based)
 	PageSize     int           `json:"page_size"`   // items per page
 	TotalPages   int           `json:"total_pages"` // ceil(Total / PageSize)
+}
+
+// ReceivingAddressFilter contains all filter/sort/pagination parameters for
+// server-side receiving address listing. Sent from frontend to backend for each
+// page request. Mirrors the TransactionFilter pattern.
+//
+// The enumeration always returns every wallet receiving address (labeled,
+// used, and external keypool entries). The only optional filter is
+// HideZeroBalance; all other refinement is done via SearchText.
+type ReceivingAddressFilter struct {
+	Page     int `json:"page"`      // 1-based page number
+	PageSize int `json:"page_size"` // 25, 50, 100, or 250
+
+	// HideZeroBalance: when true, addresses whose balance is exactly zero are
+	// excluded. When false (default), no balance filter is applied.
+	HideZeroBalance bool `json:"hide_zero_balance"`
+
+	// SearchText: case-insensitive substring match against label OR address.
+	SearchText string `json:"search_text"`
+
+	SortColumn    string `json:"sort_column"`    // "label" | "balance"
+	SortDirection string `json:"sort_direction"` // "asc" | "desc"
+}
+
+// ReceivingAddressRow is one row in the paginated receiving address list.
+// Used by the GUI Receiving Addresses dialog.
+type ReceivingAddressRow struct {
+	Address           string    `json:"address"`
+	Label             string    `json:"label"`
+	Balance           float64   `json:"balance"`             // TWINS
+	HasPaymentRequest bool      `json:"has_payment_request"` // true if any payment request targets this address
+	Created           time.Time `json:"created"`
+}
+
+// ReceivingAddressPage is a paginated response for wallet receiving addresses.
+type ReceivingAddressPage struct {
+	Addresses   []ReceivingAddressRow `json:"addresses"`
+	Total       int                   `json:"total"`        // total matching filter
+	TotalAll    int                   `json:"total_all"`    // total in wallet (unfiltered)
+	Page        int                   `json:"page"`         // current page (1-based)
+	PageSize    int                   `json:"page_size"`    // items per page
+	TotalPages  int                   `json:"total_pages"`  // ceil(Total / PageSize)
 }

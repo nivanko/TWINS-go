@@ -119,12 +119,6 @@
     "noRequests": "Запитів платежів поки немає",
     "show": "Показати",
     "remove": "Видалити",
-    "contextMenu": {
-      "copyLabel": "Копіювати мітку",
-      "copyAddress": "Копіювати адресу",
-      "copyMessage": "Копіювати повідомлення",
-      "copyAmount": "Копіювати суму"
-    },
     "table": {
       "date": "Дата",
       "label": "Мітка",

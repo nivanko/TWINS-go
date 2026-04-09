@@ -906,6 +906,108 @@ export namespace core {
 		    return a;
 		}
 	}
+	export class ReceivingAddressFilter {
+	    page: number;
+	    page_size: number;
+	    hide_zero_balance: boolean;
+	    search_text: string;
+	    sort_column: string;
+	    sort_direction: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReceivingAddressFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.page = source["page"];
+	        this.page_size = source["page_size"];
+	        this.hide_zero_balance = source["hide_zero_balance"];
+	        this.search_text = source["search_text"];
+	        this.sort_column = source["sort_column"];
+	        this.sort_direction = source["sort_direction"];
+	    }
+	}
+	export class ReceivingAddressRow {
+	    address: string;
+	    label: string;
+	    balance: number;
+	    has_payment_request: boolean;
+	    // Go type: time
+	    created: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReceivingAddressRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.address = source["address"];
+	        this.label = source["label"];
+	        this.balance = source["balance"];
+	        this.has_payment_request = source["has_payment_request"];
+	        this.created = this.convertValues(source["created"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ReceivingAddressPage {
+	    addresses: ReceivingAddressRow[];
+	    total: number;
+	    total_all: number;
+	    page: number;
+	    page_size: number;
+	    total_pages: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReceivingAddressPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.addresses = this.convertValues(source["addresses"], ReceivingAddressRow);
+	        this.total = source["total"];
+	        this.total_all = source["total_all"];
+	        this.page = source["page"];
+	        this.page_size = source["page_size"];
+	        this.total_pages = source["total_pages"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class SearchResult {
 	    type: string;
 	    query: string;
@@ -1728,7 +1830,7 @@ export namespace main {
 	export class PaymentStatsResponse {
 	    totalPaid: number;
 	    totalPayments: number;
-	    uniqueMasternodes: number;
+	    uniquePaymentAddresses: number;
 	    lowestBlock: number;
 	    highestBlock: number;
 	    entries: PaymentStatsEntry[];
@@ -1745,7 +1847,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.totalPaid = source["totalPaid"];
 	        this.totalPayments = source["totalPayments"];
-	        this.uniqueMasternodes = source["uniqueMasternodes"];
+	        this.uniquePaymentAddresses = source["uniquePaymentAddresses"];
 	        this.lowestBlock = source["lowestBlock"];
 	        this.highestBlock = source["highestBlock"];
 	        this.entries = this.convertValues(source["entries"], PaymentStatsEntry);
@@ -2218,7 +2320,6 @@ export namespace preferences {
 	    strThirdPartyTxUrls: string;
 	    windowGeometry: Record<string, WindowState>;
 	    nStakeSplitThreshold: number;
-	    fAutoCombineRewards: boolean;
 	    fCoinControlFeatures: boolean;
 	    nCoinControlMode: number;
 	    nCoinControlSortColumn: number;
@@ -2259,7 +2360,6 @@ export namespace preferences {
 	        this.strThirdPartyTxUrls = source["strThirdPartyTxUrls"];
 	        this.windowGeometry = this.convertValues(source["windowGeometry"], WindowState, true);
 	        this.nStakeSplitThreshold = source["nStakeSplitThreshold"];
-	        this.fAutoCombineRewards = source["fAutoCombineRewards"];
 	        this.fCoinControlFeatures = source["fCoinControlFeatures"];
 	        this.nCoinControlMode = source["nCoinControlMode"];
 	        this.nCoinControlSortColumn = source["nCoinControlSortColumn"];

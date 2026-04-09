@@ -1524,13 +1524,33 @@ var commandHelpTexts = map[string]string{
 		"Examples:\n" +
 		"> twins-cli getstakesplitthreshold",
 
-	"autocombinerewards": "autocombinerewards true|false ( threshold )\n\n" +
-		"Wallet will automatically monitor for any coins with value below the threshold amount, and combine them.\n\n" +
+	"setautocombine": "setautocombine true|false ( target_amount )\n\n" +
+		"Configure automatic UTXO consolidation. When enabled, the wallet periodically\n" +
+		"combines small UTXOs below the target amount into larger ones.\n\n" +
+		"Note: Consolidation links UTXOs on the same address on-chain (privacy consideration).\n\n" +
 		"Arguments:\n" +
-		"1. true|false      (boolean, required) Enable auto combine rewarding.\n" +
-		"2. threshold        (numeric, optional) Threshold amount (default: 0)\n\n" +
+		"1. true|false      (boolean, required) Enable/disable auto-combine.\n" +
+		"2. target_amount    (numeric, optional) Target amount in TWINS (required when enabling)\n\n" +
+		"Result:\n" +
+		"{\n" +
+		"  \"enabled\": true|false,\n" +
+		"  \"target\": n,\n" +
+		"  \"cooldown\": n\n" +
+		"}\n\n" +
 		"Examples:\n" +
-		"> twins-cli autocombinerewards true 500",
+		"> twins-cli setautocombine true 200000\n" +
+		"> twins-cli setautocombine false",
+
+	"getautocombine": "getautocombine\n\n" +
+		"Returns the current auto-combine configuration.\n\n" +
+		"Result:\n" +
+		"{\n" +
+		"  \"enabled\": true|false,\n" +
+		"  \"target\": n,        (numeric) Target amount in TWINS\n" +
+		"  \"cooldown\": n       (numeric) Cooldown between cycles in seconds\n" +
+		"}\n\n" +
+		"Examples:\n" +
+		"> twins-cli getautocombine",
 
 	"multisend": "multisend \"command\" ( \"parameter\" )\n\n" +
 		"MultiSend allows the automatic sending of a percentage of your stake reward to given addresses.\n\n" +

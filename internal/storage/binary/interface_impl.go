@@ -336,7 +336,12 @@ func (bs *BinaryStorage) CleanOrphanedBlocks(maxValidHeight uint32) (int, error)
 // deleteOrphanedBlock removes a single orphaned block's data and indexes.
 // Unlike DeleteBlock, this method:
 //   - Only deletes height→hash if it points to this specific hash (preserves the correct block)
-//   - Handles missing block data gracefully (just cleans indexes and metadata)
+//   - Handles missing block data gracefully (still cleans address history at the orphan height)
+//
+// When block data is available, performs a full UTXO rollback for every transaction
+// in the block (deletes UTXOs created by the block and unspends UTXOs consumed by
+// it), matching disconnectBlock semantics. This prevents stuck-spent UTXOs and
+// stale address-UTXO entries after orphan cleanup.
 func (bs *BinaryStorage) deleteOrphanedBlock(hash types.Hash, height uint32) error {
 	batch := bs.db.NewBatch()
 	defer batch.Close()
@@ -359,45 +364,419 @@ func (bs *BinaryStorage) deleteOrphanedBlock(hash types.Hash, height uint32) err
 		}
 	}
 
-	// 3. Try to load block to clean transaction indexes and address history
+	// 3. Try to load block for transaction index cleanup AND full UTXO rollback.
 	block, blockErr := bs.GetBlock(hash)
 	if blockErr == nil && block != nil {
 		for _, tx := range block.Transactions {
 			txHash := tx.Hash()
+
+			// Delete transaction index + mempool namespace
 			batch.Delete(TransactionKey(txHash), nil)
 			batch.Delete(MempoolTransactionKey(txHash), nil)
-		}
 
-		// Delete address history entries for this orphaned block's transactions
-		addressHistoryPrefix := []byte{PrefixAddressHistory}
-		iter, iterErr := bs.db.NewIter(&pebble.IterOptions{
-			LowerBound: addressHistoryPrefix,
-			UpperBound: NextPrefix(addressHistoryPrefix),
-		})
-		if iterErr == nil {
-			for iter.First(); iter.Valid(); iter.Next() {
-				key := iter.Key()
-				// Key format: 0x05 + scriptHash(20) + height(4) + txHash(32) + txIndex(2)
-				if len(key) >= 25 {
-					entryHeight := binary.LittleEndian.Uint32(key[21:25])
-					if entryHeight == height {
-						batch.Delete(key, nil)
+			// Rollback outputs: delete UTXOExist entries and the corresponding
+			// address UTXO index entries so balance queries no longer see them.
+			for outIdx, output := range tx.Outputs {
+				outpointIndex := uint32(outIdx)
+				utxoKey := UTXOExistKey(txHash, outpointIndex)
+
+				// Best-effort read to know the scriptHash for address UTXO
+				// cleanup. If missing, we still delete the UTXOExist key.
+				if existing, closer, getErr := bs.db.Get(utxoKey); getErr == nil {
+					if decoded, decErr := DecodeUTXOData(existing); decErr == nil && decoded.ScriptHash != [20]byte{} {
+						addrKey := AddressUTXOKey(decoded.ScriptHash, txHash, outpointIndex)
+						batch.Delete(addrKey, nil)
+					}
+					closer.Close()
+				} else if output != nil && len(output.ScriptPubKey) > 0 {
+					// Fallback: derive scriptHash from tx output
+					if _, scriptHash := AnalyzeScript(output.ScriptPubKey); scriptHash != [20]byte{} {
+						addrKey := AddressUTXOKey(scriptHash, txHash, outpointIndex)
+						batch.Delete(addrKey, nil)
 					}
 				}
+
+				batch.Delete(utxoKey, nil)
 			}
-			iter.Close()
+
+			// Rollback inputs: unspend UTXOs consumed by this tx if the
+			// recorded spender is this tx. Skip null prevouts (coinbase /
+			// coinstake marker inputs).
+			for _, input := range tx.Inputs {
+				prev := input.PreviousOutput
+				if prev.Hash == (types.Hash{}) && prev.Index == 0xffffffff {
+					continue // coinbase-style null input
+				}
+
+				prevKey := UTXOExistKey(prev.Hash, prev.Index)
+				prevData, prevCloser, prevErr := bs.db.Get(prevKey)
+				if prevErr != nil {
+					continue // UTXO already gone — nothing to unspend
+				}
+				decoded, decErr := DecodeUTXOData(prevData)
+				prevCloser.Close()
+				if decErr != nil {
+					continue
+				}
+				if decoded.IsUnspent() {
+					continue
+				}
+				// Only unspend if this transaction is the recorded spender
+				// AND the spend is attributed to the orphan block we are
+				// removing. The height guard is defensive: if the same txid
+				// were re-included on the winning chain at a different
+				// height (disallowed by BIP34, but checked for safety), the
+				// current SpendingHeight would differ from the orphan
+				// height and we must not clear that valid spend.
+				if decoded.SpendingTxHash != txHash || decoded.SpendingHeight != height {
+					continue
+				}
+
+				decoded.SpendingHeight = 0
+				decoded.SpendingTxHash = types.Hash{}
+				newData, encErr := EncodeUTXOData(decoded)
+				if encErr != nil {
+					continue
+				}
+				batch.Set(prevKey, newData, nil)
+
+				// Restore address UTXO index entry so balances see the UTXO.
+				if decoded.ScriptHash != [20]byte{} {
+					addrKey := AddressUTXOKey(decoded.ScriptHash, prev.Hash, prev.Index)
+					var valueBuf [8]byte
+					binary.LittleEndian.PutUint64(valueBuf[:], decoded.Value)
+					batch.Set(addrKey, valueBuf[:], nil)
+				}
+			}
+
 		}
 	}
-	// If GetBlock fails, tx indexes and address history were likely already deleted by disconnectBlock
 
-	// 4. Delete block data (no-op if already gone)
+	// 4. Delete address history entries at this height regardless of whether
+	//    block data was loaded. This prevents stale 0x05 entries from surviving
+	//    when block data was already removed by an earlier disconnect/crash.
+	addressHistoryPrefix := []byte{PrefixAddressHistory}
+	iter, iterErr := bs.db.NewIter(&pebble.IterOptions{
+		LowerBound: addressHistoryPrefix,
+		UpperBound: NextPrefix(addressHistoryPrefix),
+	})
+	if iterErr != nil {
+		return fmt.Errorf("create address history iterator: %w", iterErr)
+	}
+	for iter.First(); iter.Valid(); iter.Next() {
+		key := iter.Key()
+		// Key format: 0x05 + scriptHash(20) + height(4) + txHash(32) + txIndex(2)
+		if len(key) >= 25 {
+			entryHeight := binary.LittleEndian.Uint32(key[21:25])
+			if entryHeight == height {
+				keyCopy := make([]byte, len(key))
+				copy(keyCopy, key)
+				batch.Delete(keyCopy, nil)
+			}
+		}
+	}
+	if err := iter.Error(); err != nil {
+		iter.Close()
+		return fmt.Errorf("iterate address history: %w", err)
+	}
+	iter.Close()
+
+	// 5. Delete block data (no-op if already gone)
 	batch.Delete(BlockKey(hash), nil)
 
-	// 5. Delete associated metadata
+	// 6. Delete associated metadata
 	batch.Delete(StakeModifierKey(hash), nil)
 	batch.Delete(BlockPoSMetadataKey(hash), nil)
 
 	return batch.Commit(nil)
+}
+
+// UnspendUTXOsBySpendingTx iterates the UTXO set and resets the spending
+// reference on any UTXO whose SpendingTxHash is in txHashes. Returns the
+// number of UTXOs that were unspent. Used to reconcile stuck-spent UTXOs
+// whose spending transaction no longer exists in storage (stale references
+// after incomplete orphan cleanup or corrupt block recovery).
+//
+// Concurrency: this is a read-modify-write pass without an explicit
+// transaction. The caller (wallet rescan) is expected to run during node
+// startup or under user-triggered RPC, when block processing is either
+// idle or naturally serialised via the wallet mutex and higher-layer
+// processing locks. The only UTXOs touched have SpendingTxHash set to a
+// txid that is absent from storage — no active block can legitimately be
+// modifying them concurrently, because unspending requires disconnecting
+// the (nonexistent) spending block.
+func (bs *BinaryStorage) UnspendUTXOsBySpendingTx(txHashes map[types.Hash]struct{}) (int, error) {
+	if len(txHashes) == 0 {
+		return 0, nil
+	}
+
+	prefix := []byte{PrefixUTXOExist}
+	iter, err := bs.db.NewIter(&pebble.IterOptions{
+		LowerBound: prefix,
+		UpperBound: NextPrefix(prefix),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("create UTXO iterator: %w", err)
+	}
+	defer iter.Close()
+
+	batch := bs.db.NewBatch()
+	defer batch.Close()
+
+	unspent := 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		key := iter.Key()
+		if len(key) != 37 { // [0x07][txhash:32][index:4]
+			continue
+		}
+
+		value := iter.Value()
+		decoded, decErr := DecodeUTXOData(value)
+		if decErr != nil {
+			continue
+		}
+		if decoded.IsUnspent() {
+			continue
+		}
+		if _, match := txHashes[decoded.SpendingTxHash]; !match {
+			continue
+		}
+
+		// Extract outpoint from key
+		var outpointHash types.Hash
+		copy(outpointHash[:], key[1:33])
+		outpointIndex := binary.LittleEndian.Uint32(key[33:37])
+
+		// Reset spending reference
+		decoded.SpendingHeight = 0
+		decoded.SpendingTxHash = types.Hash{}
+
+		newData, encErr := EncodeUTXOData(decoded)
+		if encErr != nil {
+			continue
+		}
+
+		// Copy key (iterator data is reused)
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy, key)
+		if setErr := batch.Set(keyCopy, newData, nil); setErr != nil {
+			return 0, fmt.Errorf("update UTXO: %w", setErr)
+		}
+
+		// Restore address UTXO index entry
+		if decoded.ScriptHash != [20]byte{} {
+			addrKey := AddressUTXOKey(decoded.ScriptHash, outpointHash, outpointIndex)
+			var valueBuf [8]byte
+			binary.LittleEndian.PutUint64(valueBuf[:], decoded.Value)
+			if setErr := batch.Set(addrKey, valueBuf[:], nil); setErr != nil {
+				return 0, fmt.Errorf("restore address UTXO: %w", setErr)
+			}
+		}
+
+		unspent++
+	}
+
+	// CRITICAL: check iterator error before committing. A mid-scan Pebble
+	// error would otherwise produce a partial batch that still commits —
+	// exactly the transient I/O state the wallet self-heal path tries to
+	// avoid treating as a successful reconciliation.
+	if err := iter.Error(); err != nil {
+		return 0, fmt.Errorf("iterate UTXO set: %w", err)
+	}
+
+	if unspent == 0 {
+		return 0, nil
+	}
+
+	if err := batch.Commit(nil); err != nil {
+		return 0, fmt.Errorf("commit unspend batch: %w", err)
+	}
+
+	return unspent, nil
+}
+
+// FindAndMarkSpendersForOutpoints scans the entire transaction index once
+// and finds any transaction whose inputs consume one of the given
+// outpoints. For each match, validates the transaction is on the active
+// main chain, verifies the target UTXO is still unspent, and marks it as
+// spent in a single batch (also removing the address UTXO index entry).
+// Returns a map of outpoint → spender info for callers that need to
+// update their in-memory state.
+//
+// This is the recovery path for phantom-unspent UTXOs whose spending
+// transaction was persisted in storage but whose mark-spent and
+// address-index input-side writes were both skipped by an interrupted
+// batch commit. When both writes are missing, address-history-based
+// reconciliation cannot find the spender, and a full transaction scan
+// is the only way to recover.
+//
+// Concurrency: caller is expected to hold an appropriate higher-layer
+// lock (wallet mutex during rescan); this method does not take any
+// storage-level lock but pebble provides snapshot consistency for the
+// iterator. Writes are coalesced into a single batch commit.
+func (bs *BinaryStorage) FindAndMarkSpendersForOutpoints(outpoints map[types.Outpoint]struct{}) (map[types.Outpoint]storage.SpenderInfo, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
+	}
+
+	// Local working copy so we can delete found entries and avoid mutating
+	// the caller's map.
+	pending := make(map[types.Outpoint]struct{}, len(outpoints))
+	for op := range outpoints {
+		pending[op] = struct{}{}
+	}
+
+	prefix := []byte{PrefixTransaction}
+	iter, err := bs.db.NewIter(&pebble.IterOptions{
+		LowerBound: prefix,
+		UpperBound: NextPrefix(prefix),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create transaction iterator: %w", err)
+	}
+	defer iter.Close()
+
+	batch := bs.db.NewBatch()
+	defer batch.Close()
+
+	results := make(map[types.Outpoint]storage.SpenderInfo)
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if len(pending) == 0 {
+			break // all targets resolved — early exit
+		}
+
+		value := iter.Value()
+		txData, decErr := DecodeTransactionData(value)
+		if decErr != nil || txData == nil || txData.TxData == nil {
+			continue
+		}
+		tx := txData.TxData
+
+		// Coinbase has no consumable inputs.
+		if tx.IsCoinbase() {
+			continue
+		}
+
+		// Fast-path: check if any input matches a pending outpoint
+		// before doing the expensive main-chain validation.
+		var matched []types.Outpoint
+		for _, input := range tx.Inputs {
+			prev := input.PreviousOutput
+			if prev.Hash == (types.Hash{}) && prev.Index == 0xffffffff {
+				continue // coinstake-style null prevout
+			}
+			if _, wanted := pending[prev]; wanted {
+				matched = append(matched, prev)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+
+		// Validate that this transaction is on the active main chain.
+		// If the block at the stored height points to a different hash,
+		// the transaction is from an orphaned chain and its inputs must
+		// not be marked as spent.
+		canonicalHash, chkErr := bs.GetBlockHashByHeight(txData.Height)
+		if chkErr != nil {
+			continue // height not found — treat as orphan, skip
+		}
+		if canonicalHash != txData.BlockHash {
+			continue // tx on orphan/fork chain, skip
+		}
+
+		spenderHash := tx.Hash()
+
+		for _, outpoint := range matched {
+			utxoKey := UTXOExistKey(outpoint.Hash, outpoint.Index)
+			existing, closer, getErr := bs.db.Get(utxoKey)
+			if getErr != nil {
+				if getErr == pebble.ErrNotFound {
+					// UTXO no longer present — nothing to reconcile.
+					delete(pending, outpoint)
+					continue
+				}
+				// Transient I/O error: fail closed rather than silently
+				// dropping the outpoint. A repair pass that silently
+				// skipped real failures would hide the very bugs it is
+				// meant to fix.
+				return nil, fmt.Errorf("read UTXO %s: %w", outpoint.String(), getErr)
+			}
+			decoded, decUTXOErr := DecodeUTXOData(existing)
+			closer.Close()
+			if decUTXOErr != nil {
+				return nil, fmt.Errorf("decode UTXO %s: %w", outpoint.String(), decUTXOErr)
+			}
+			if decoded.IsSpent() {
+				// Already spent — no work. This is a normal end state
+				// reached via a different repair path or a concurrent
+				// writer; drop from pending and continue.
+				delete(pending, outpoint)
+				continue
+			}
+
+			// Pre-mutation main-chain re-check: re-read the canonical
+			// block hash at the spender's height and bail out if it no
+			// longer matches the tx's stored BlockHash. Closes the race
+			// window between the initial main-chain validation above
+			// and this write — a concurrent block disconnect could
+			// invalidate the spender's canonicality after our iterator
+			// snapshot but before we commit. Without this re-check we
+			// might mark a UTXO as spent by a transaction that is no
+			// longer on the active chain.
+			recheckHash, recheckErr := bs.GetBlockHashByHeight(txData.Height)
+			if recheckErr != nil {
+				if storage.IsNotFoundError(recheckErr) {
+					delete(pending, outpoint)
+					continue
+				}
+				return nil, fmt.Errorf("revalidate main chain for %s at height %d: %w",
+					spenderHash.String(), txData.Height, recheckErr)
+			}
+			if recheckHash != txData.BlockHash {
+				// Spender no longer canonical — skip this outpoint for
+				// this pass. A subsequent rescan can retry.
+				delete(pending, outpoint)
+				continue
+			}
+
+			decoded.SpendingHeight = txData.Height
+			decoded.SpendingTxHash = spenderHash
+			newData, encErr := EncodeUTXOData(decoded)
+			if encErr != nil {
+				return nil, fmt.Errorf("encode UTXO %s: %w", outpoint.String(), encErr)
+			}
+
+			if setErr := batch.Set(UTXOExistKey(outpoint.Hash, outpoint.Index), newData, nil); setErr != nil {
+				return nil, fmt.Errorf("update UTXO %s: %w", outpoint.String(), setErr)
+			}
+
+			// Drop the address UTXO index entry so balance queries skip it.
+			if decoded.ScriptHash != [20]byte{} {
+				addrKey := AddressUTXOKey(decoded.ScriptHash, outpoint.Hash, outpoint.Index)
+				batch.Delete(addrKey, nil)
+			}
+
+			results[outpoint] = storage.SpenderInfo{
+				SpenderTxHash: spenderHash,
+				SpenderHeight: txData.Height,
+			}
+			delete(pending, outpoint)
+		}
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterate transactions: %w", err)
+	}
+
+	if len(results) > 0 {
+		if err := batch.Commit(nil); err != nil {
+			return nil, fmt.Errorf("commit mark-spent batch: %w", err)
+		}
+	}
+
+	return results, nil
 }
 
 // DeleteBlockData removes only the block data (compact block key) without touching indexes.

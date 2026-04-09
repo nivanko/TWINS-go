@@ -119,12 +119,6 @@
     "noRequests": "Encara no hi ha sol·licituds de pagament",
     "show": "Mostra",
     "remove": "Elimina",
-    "contextMenu": {
-      "copyLabel": "Copia etiqueta",
-      "copyAddress": "Copia adreça",
-      "copyMessage": "Copia missatge",
-      "copyAmount": "Copia import"
-    },
     "table": {
       "date": "Data",
       "label": "Etiqueta",

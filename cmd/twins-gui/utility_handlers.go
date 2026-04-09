@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/twins-dev/twins-core/internal/gui/constants"
@@ -146,6 +148,66 @@ func (a *App) SaveCSVFile(content string, defaultFilename string, title string) 
 	err = os.WriteFile(filePath, []byte(content), 0600)
 	if err != nil {
 		return false, fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return true, nil
+}
+
+// SaveQRImage opens a native save dialog and writes a PNG decoded from
+// base64 data to the chosen path. Accepts either a raw base64 string or a
+// full `data:image/png;base64,...` data URL.
+//
+// Returns (true, nil) if the file was saved, (false, nil) if the user
+// cancelled the dialog, and (false, error) on any failure.
+func (a *App) SaveQRImage(pngBase64 string, defaultFilename string) (bool, error) {
+	if a.ctx == nil {
+		return false, fmt.Errorf("application context not initialized")
+	}
+
+	// Strip the data URL prefix if present (e.g. "data:image/png;base64,")
+	if strings.HasPrefix(pngBase64, "data:") {
+		if idx := strings.Index(pngBase64, ","); idx != -1 {
+			pngBase64 = pngBase64[idx+1:]
+		}
+	}
+
+	pngData, err := base64.StdEncoding.DecodeString(pngBase64)
+	if err != nil {
+		return false, fmt.Errorf("invalid base64 PNG data: %w", err)
+	}
+
+	if defaultFilename == "" {
+		defaultFilename = fmt.Sprintf("twins-qr-%s.png", time.Now().Format("2006-01-02"))
+	}
+
+	filePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: defaultFilename,
+		Title:           "Save QR Code Image",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "PNG Images (*.png)",
+				Pattern:     "*.png",
+			},
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to open save dialog: %w", err)
+	}
+
+	// User cancelled the dialog
+	if filePath == "" {
+		return false, nil
+	}
+
+	filePath = filepath.Clean(filePath)
+	if filepath.Ext(filePath) != ".png" {
+		filePath += ".png"
+	}
+
+	// PNG images are not sensitive (they encode the same address/URI already
+	// displayed in the UI), so use standard file permissions.
+	if err := os.WriteFile(filePath, pngData, 0644); err != nil {
+		return false, fmt.Errorf("failed to write PNG file: %w", err)
 	}
 
 	return true, nil

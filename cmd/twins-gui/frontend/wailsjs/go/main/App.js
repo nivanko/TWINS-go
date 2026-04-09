@@ -106,6 +106,10 @@ export function ExportFilteredTransactionsCSV(arg1) {
   return window['go']['main']['App']['ExportFilteredTransactionsCSV'](arg1);
 }
 
+export function ExportReceivingAddressesCSV(arg1) {
+  return window['go']['main']['App']['ExportReceivingAddressesCSV'](arg1);
+}
+
 export function ForceShutdown() {
   return window['go']['main']['App']['ForceShutdown']();
 }
@@ -118,8 +122,8 @@ export function GenerateReceivingAddress(arg1) {
   return window['go']['main']['App']['GenerateReceivingAddress'](arg1);
 }
 
-export function GenerateTwinsURI(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['GenerateTwinsURI'](arg1, arg2, arg3, arg4);
+export function GetAddressBalances() {
+  return window['go']['main']['App']['GetAddressBalances']();
 }
 
 export function GetAddressLabel(arg1) {
@@ -128,10 +132,6 @@ export function GetAddressLabel(arg1) {
 
 export function GetAddressTransactions(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetAddressTransactions'](arg1, arg2, arg3);
-}
-
-export function GetAddresses() {
-  return window['go']['main']['App']['GetAddresses']();
 }
 
 export function GetAllSettingsMetadata() {
@@ -308,6 +308,10 @@ export function GetRPCStatus() {
 
 export function GetReceivingAddresses() {
   return window['go']['main']['App']['GetReceivingAddresses']();
+}
+
+export function GetReceivingAddressesPage(arg1) {
+  return window['go']['main']['App']['GetReceivingAddressesPage'](arg1);
 }
 
 export function GetRecentTransactions() {
@@ -500,6 +504,10 @@ export function RestoreToStakingOnlyMode() {
 
 export function SaveCSVFile(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveCSVFile'](arg1, arg2, arg3);
+}
+
+export function SaveQRImage(arg1, arg2) {
+  return window['go']['main']['App']['SaveQRImage'](arg1, arg2);
 }
 
 export function SaveWindowGeometry(arg1, arg2, arg3, arg4, arg5, arg6) {

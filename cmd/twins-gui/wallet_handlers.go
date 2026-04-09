@@ -33,11 +33,6 @@ func (a *App) GetBlockchainInfo() (*core.BlockchainInfo, error) {
 	return &info, nil
 }
 
-// GetAddresses returns wallet addresses
-func (a *App) GetAddresses() ([]string, error) {
-	return nil, fmt.Errorf("GetAddresses: not yet implemented")
-}
-
 // ValidateAddress validates a TWINS address and returns detailed information
 func (a *App) ValidateAddress(address string) (*core.AddressValidation, error) {
 	if a.coreClient == nil {

@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Lock, Unlock, LockOpen } from 'lucide-react';
+import { getUnitLabel, DISPLAY_UNIT_TWINS, DISPLAY_UNIT_MTWINS, DISPLAY_UNIT_UTWINS } from '@/shared/utils/format';
 import '@/styles/qt-theme.css';
+
+const UNIT_OPTIONS = [
+  { value: DISPLAY_UNIT_TWINS, label: 'TWINS' },
+  { value: DISPLAY_UNIT_MTWINS, label: 'mTWINS' },
+  { value: DISPLAY_UNIT_UTWINS, label: 'µTWINS' },
+];
 
 interface StatusBarProps {
   isConnected?: boolean;
@@ -9,19 +16,21 @@ interface StatusBarProps {
   syncProgress?: number;
   blockHeight?: number;
   behindText?: string;
-  networkName?: string;
   isStaking?: boolean;
   isEncrypted?: boolean;
   isLocked?: boolean;
   isStakingOnly?: boolean;
   isHD?: boolean;
   isTor?: boolean;
+  displayUnit?: number;
   /** Called when the lock icon is clicked (encrypted wallets only) */
   onLockClick?: (e: React.MouseEvent) => void;
   /** Called when the "not encrypted" area is clicked (unencrypted wallets only) */
   onEncryptClick?: () => void;
   /** Called when the peers count indicator is clicked */
   onPeersClick?: () => void;
+  /** Called when the user selects a different display unit */
+  onUnitChange?: (unit: number) => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -30,18 +39,34 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   syncProgress = 0,
   blockHeight = 1545297,
   behindText = '30 weeks behind',
-  networkName = 'TWINS',
   isStaking = false,
   isEncrypted = false,
   isLocked = true,
   isStakingOnly = false,
   isHD = true,
   isTor = false,
+  displayUnit = 0,
   onLockClick,
   onEncryptClick,
   onPeersClick,
+  onUnitChange,
 }) => {
   const { t } = useTranslation('common');
+  const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
+  const unitDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close unit dropdown on click outside
+  useEffect(() => {
+    if (unitDropdownOpen) {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (unitDropdownRef.current && !unitDropdownRef.current.contains(e.target as Node)) {
+          setUnitDropdownOpen(false);
+        }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [unitDropdownOpen]);
 
   // Determine which connection icon to use based on connection count
   const getConnectionIcon = () => {
@@ -116,8 +141,74 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
       {/* Right side - Network icons */}
       <div className="flex items-center gap-4">
-        {/* Network name */}
-        <span style={{ fontWeight: 500 }}>{networkName}</span>
+        {/* Unit display selector */}
+        <div style={{ position: 'relative' }} ref={unitDropdownRef}>
+          <button
+            onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
+            title={t('statusBar.unitTooltip', 'Unit to show amounts in. Click to select another unit.')}
+            aria-label={t('statusBar.unitTooltip', 'Unit to show amounts in. Click to select another unit.')}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '2px 6px',
+              cursor: 'pointer',
+              borderRadius: '2px',
+              color: 'var(--qt-text-secondary)',
+              fontSize: '11px',
+              fontWeight: 500,
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            {getUnitLabel(displayUnit)}
+          </button>
+          {unitDropdownOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: 0,
+                marginBottom: '4px',
+                backgroundColor: '#2b2b2b',
+                border: '1px solid #555',
+                borderRadius: '4px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+                zIndex: 60,
+                minWidth: '100px',
+                padding: '4px 0',
+              }}
+            >
+              {UNIT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    onUnitChange?.(opt.value);
+                    setUnitDropdownOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    padding: '6px 12px',
+                    background: 'none',
+                    border: 'none',
+                    color: displayUnit === opt.value ? '#4a8af4' : '#ddd',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <span style={{ width: '18px', flexShrink: 0 }}>
+                    {displayUnit === opt.value ? '✓' : ''}
+                  </span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* HD Wallet status */}
         {isHD && (

@@ -119,12 +119,6 @@
     "noRequests": "Brak żądań płatności",
     "show": "Pokaż",
     "remove": "Usuń",
-    "contextMenu": {
-      "copyLabel": "Kopiuj zakładkę",
-      "copyAddress": "Kopiuj adres",
-      "copyMessage": "Kopiuj wiadomość",
-      "copyAmount": "Kopiuj kwotę"
-    },
     "table": {
       "date": "Data",
       "label": "Zakładka",

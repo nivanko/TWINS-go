@@ -987,7 +987,7 @@ func (s *Server) statsLoop() {
 				"total_dropped": dropped,
 				"recv_types":    formatMsgTypes(recvTypes),
 				"sent_types":    formatMsgTypes(sentTypes),
-			}).Info("P2P stats")
+			}).Debug("P2P stats")
 
 		case <-s.quit:
 			return

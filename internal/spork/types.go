@@ -37,7 +37,7 @@ const (
 	DefaultNewProtocolEnforcement       = 4070908800 // OFF
 	DefaultNewProtocolEnforcement2      = 4070908800 // OFF
 	DefaultTwinsEnableMasternodeTiers   = 4070908800 // OFF
-	DefaultTwinsMinStakeAmount          = 4070908800 // OFF
+	DefaultTwinsMinStakeAmount          = 4070908800 // OFF. Legacy C++ default is also OFF; mainnet historically activated it via a signed spork broadcast. The consensus rule is enforced on mainnet regardless of spork state (see validateMinStakeOutput height gate) to avoid diverging from legacy mainnet, while testnet/regtest remain gated on this spork.
 )
 
 // Message represents a spork message broadcast over the network

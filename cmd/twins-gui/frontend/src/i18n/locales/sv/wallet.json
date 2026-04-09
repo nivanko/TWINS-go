@@ -119,12 +119,6 @@
     "noRequests": "Inga betalningsförfrågningar ännu",
     "show": "Visa",
     "remove": "Ta bort",
-    "contextMenu": {
-      "copyLabel": "Kopiera etikett",
-      "copyAddress": "Kopiera adress",
-      "copyMessage": "Kopiera meddelande",
-      "copyAmount": "Kopiera belopp"
-    },
     "table": {
       "date": "Datum",
       "label": "Etikett",

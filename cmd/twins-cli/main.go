@@ -940,10 +940,10 @@ func main() {
 			},
 		},
 		{
-			Name:      "autocombinerewards",
-			Usage:     "Enable/disable auto-combine rewards",
+			Name:      "setautocombine",
+			Usage:     "Configure automatic UTXO consolidation",
 			Category:  "Wallet",
-			ArgsUsage: "<true|false> [threshold]",
+			ArgsUsage: "<true|false> [target_amount]",
 			Action: func(c *cli.Context) error {
 				if c.NArg() < 1 {
 					return fmt.Errorf("enabled parameter required (true/false)")
@@ -953,12 +953,22 @@ func main() {
 				args := []interface{}{enabled}
 
 				if c.NArg() > 1 {
-					if threshold, err := strconv.ParseFloat(c.Args().Get(1), 64); err == nil {
-						args = append(args, threshold)
+					if target, err := strconv.ParseFloat(c.Args().Get(1), 64); err == nil {
+						args = append(args, target)
+					} else {
+						return fmt.Errorf("invalid target amount: %s", c.Args().Get(1))
 					}
 				}
 
-				return executeRPC(c, "autocombinerewards", args)
+				return executeRPC(c, "setautocombine", args)
+			},
+		},
+		{
+			Name:     "getautocombine",
+			Usage:    "Get current auto-combine configuration",
+			Category: "Wallet",
+			Action: func(c *cli.Context) error {
+				return executeRPC(c, "getautocombine", nil)
 			},
 		},
 		{

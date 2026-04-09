@@ -3,8 +3,10 @@
 package cgo
 
 /*
-#cgo darwin CFLAGS: -I/opt/homebrew/opt/berkeley-db@4/include
-#cgo darwin LDFLAGS: -L/opt/homebrew/opt/berkeley-db@4/lib -ldb
+#cgo darwin,arm64 CFLAGS: -I/opt/homebrew/opt/berkeley-db@4/include
+#cgo darwin,arm64 LDFLAGS: -L/opt/homebrew/opt/berkeley-db@4/lib -ldb
+#cgo darwin,amd64 CFLAGS: -I/usr/local/opt/berkeley-db@4/include
+#cgo darwin,amd64 LDFLAGS: -L/usr/local/opt/berkeley-db@4/lib -ldb
 #cgo linux CFLAGS: -I/usr/include
 #cgo linux LDFLAGS: -ldb
 

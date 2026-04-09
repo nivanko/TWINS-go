@@ -3,6 +3,7 @@ import {
   convertToDisplayUnit,
   getUnitLabel,
   formatBalance,
+  truncateAddress,
   DISPLAY_UNIT_TWINS,
   DISPLAY_UNIT_MTWINS,
   DISPLAY_UNIT_UTWINS,
@@ -75,5 +76,34 @@ describe('formatBalance', () => {
 
   it('handles negative amounts', () => {
     expect(formatBalance(-1.5, 8, false)).toBe('-1.50000000');
+  });
+});
+
+describe('truncateAddress', () => {
+  it('returns the address unchanged when shorter than start+end+3', () => {
+    expect(truncateAddress('SHORT')).toBe('SHORT');
+  });
+
+  it('truncates a long address with default 10/10', () => {
+    const addr = 'WYC3uuA3hG4yosQcEJWsSbsEGzUSDCNpz1';
+    expect(truncateAddress(addr)).toBe('WYC3uuA3hG...GzUSDCNpz1');
+  });
+
+  it('truncates with custom startChars and endChars', () => {
+    const addr = 'WYC3uuA3hG4yosQcEJWsSbsEGzUSDCNpz1';
+    expect(truncateAddress(addr, 12, 10)).toBe('WYC3uuA3hG4y...GzUSDCNpz1');
+  });
+
+  it('does not truncate when address length is exactly the threshold', () => {
+    // Threshold = startChars + endChars + 3
+    // 10 + 10 + 3 = 23, so a 23-char address should NOT be truncated
+    const addr = '12345678901234567890123';
+    expect(truncateAddress(addr)).toBe(addr);
+  });
+
+  it('preserves original when length equals threshold + 1 (just above no-truncate boundary)', () => {
+    // 10 + 10 + 3 = 23, so a 24-char address SHOULD be truncated
+    const addr = '123456789012345678901234';
+    expect(truncateAddress(addr)).toBe('1234567890...5678901234');
   });
 });

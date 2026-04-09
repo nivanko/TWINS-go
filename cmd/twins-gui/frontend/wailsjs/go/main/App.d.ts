@@ -60,19 +60,19 @@ export function ExportContactsCSV():Promise<boolean>;
 
 export function ExportFilteredTransactionsCSV(arg1:core.TransactionFilter):Promise<boolean>;
 
+export function ExportReceivingAddressesCSV(arg1:core.ReceivingAddressFilter):Promise<boolean>;
+
 export function ForceShutdown():Promise<void>;
 
 export function GenerateMasternodeKey():Promise<string>;
 
 export function GenerateReceivingAddress(arg1:string):Promise<core.ReceivingAddress>;
 
-export function GenerateTwinsURI(arg1:string,arg2:number,arg3:string,arg4:string):Promise<string>;
+export function GetAddressBalances():Promise<Record<string, number>>;
 
 export function GetAddressLabel(arg1:string):Promise<string>;
 
 export function GetAddressTransactions(arg1:string,arg2:number,arg3:number):Promise<core.AddressTxPage>;
-
-export function GetAddresses():Promise<Array<string>>;
 
 export function GetAllSettingsMetadata():Promise<Record<string, main.SettingMetadata>>;
 
@@ -161,6 +161,8 @@ export function GetRPCCommandList():Promise<Array<string>>;
 export function GetRPCStatus():Promise<Record<string, any>>;
 
 export function GetReceivingAddresses():Promise<Array<core.ReceivingAddress>>;
+
+export function GetReceivingAddressesPage(arg1:core.ReceivingAddressFilter):Promise<core.ReceivingAddressPage>;
 
 export function GetRecentTransactions():Promise<Array<core.Transaction>>;
 
@@ -257,6 +259,8 @@ export function RestartApp():Promise<void>;
 export function RestoreToStakingOnlyMode():Promise<main.RestoreToStakingOnlyModeResult>;
 
 export function SaveCSVFile(arg1:string,arg2:string,arg3:string):Promise<boolean>;
+
+export function SaveQRImage(arg1:string,arg2:string):Promise<boolean>;
 
 export function SaveWindowGeometry(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number,arg6:boolean):Promise<void>;
 

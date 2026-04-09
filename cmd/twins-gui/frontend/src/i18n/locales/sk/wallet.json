@@ -119,12 +119,6 @@
     "noRequests": "Zatiaľ žiadne žiadosti o platbu",
     "show": "Zobraziť",
     "remove": "Odstrániť",
-    "contextMenu": {
-      "copyLabel": "Kopírovať štítok",
-      "copyAddress": "Kopírovať adresu",
-      "copyMessage": "Kopírovať správu",
-      "copyAmount": "Kopírovať sumu"
-    },
     "table": {
       "date": "Dátum",
       "label": "Štítok",

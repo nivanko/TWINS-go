@@ -2,6 +2,7 @@ import type { SliceCreator } from '../store.types';
 import { core } from '@wailsjs/go/models';
 import {
   GetReceivingAddresses,
+  GetAddressBalances,
   GetPaymentRequests,
   GetCurrentReceivingAddress,
   GenerateReceivingAddress,
@@ -30,7 +31,8 @@ export interface ReceiveState {
   // Payment request history
   paymentRequests: PaymentRequest[];
 
-  // Checkbox state for address reuse
+  // When true, reuse the same address for multiple requests (not recommended)
+  // When false (default), generate a new address per request
   reuseAddress: boolean;
 
   // Form field values
@@ -50,21 +52,14 @@ export interface ReceiveState {
   isGeneratingAddress: boolean;
   isCreatingRequest: boolean;
 
+  // Per-address spendable balances (address -> balance in TWINS)
+  addressBalances: Record<string, number>;
+
   // Error state
   error: string | null;
 }
 
 export interface ReceiveActions {
-  // Address management
-  setCurrentAddress: (address: string) => void;
-  setReceivingAddresses: (addresses: ReceivingAddress[]) => void;
-  addReceivingAddress: (address: ReceivingAddress) => void;
-
-  // Payment request management
-  setPaymentRequests: (requests: PaymentRequest[]) => void;
-  addPaymentRequest: (request: PaymentRequest) => void;
-  removePaymentRequest: (id: number) => void;
-
   // Form state
   setReuseAddress: (reuse: boolean) => void;
   updateFormField: (field: keyof ReceiveFormState, value: string) => void;
@@ -76,8 +71,19 @@ export interface ReceiveActions {
   openRequestDialog: (request?: PaymentRequest) => void;
   closeRequestDialog: () => void;
 
+  // Picks an existing receiving address as the current address for the
+  // Payment Request form on the Receive page. Atomically: sets
+  // currentAddress, flips reuseAddress to true (so the picked address
+  // survives through createPaymentRequest instead of being replaced by a
+  // freshly generated one on the post-submit rotate), closes the
+  // addresses dialog, and clears any lingering error. Form fields
+  // (label/amount/message) are intentionally preserved so the user does
+  // not lose in-progress input.
+  selectAddressForRequest: (address: string) => void;
+
   // Async actions (thunks)
   fetchReceivingAddresses: () => Promise<void>;
+  fetchAddressBalances: () => Promise<void>;
   fetchPaymentRequests: () => Promise<void>;
   fetchCurrentAddress: () => Promise<void>;
   generateNewAddress: (label: string) => Promise<ReceivingAddress | null>;
@@ -109,6 +115,7 @@ const initialState: ReceiveState = {
   isAddressesDialogOpen: false,
   isRequestDialogOpen: false,
   selectedRequest: null,
+  addressBalances: {},
   isLoading: false,
   isGeneratingAddress: false,
   isCreatingRequest: false,
@@ -117,42 +124,6 @@ const initialState: ReceiveState = {
 
 export const createReceiveSlice: SliceCreator<ReceiveSlice> = (set, get) => ({
   ...initialState,
-
-  // Address management
-  setCurrentAddress: (address) =>
-    set(() => ({
-      currentAddress: address,
-    })),
-
-  setReceivingAddresses: (addresses) =>
-    set(() => ({
-      receivingAddresses: addresses,
-    })),
-
-  addReceivingAddress: (address) =>
-    set((state) => ({
-      receivingAddresses: [...state.receivingAddresses, address],
-    })),
-
-  // Payment request management
-  setPaymentRequests: (requests) =>
-    set(() => ({
-      // Sort by date descending (newest first)
-      paymentRequests: [...requests].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ),
-    })),
-
-  addPaymentRequest: (request) =>
-    set((state) => ({
-      // Add to beginning (newest first)
-      paymentRequests: [request, ...state.paymentRequests],
-    })),
-
-  removePaymentRequest: (id) =>
-    set((state) => ({
-      paymentRequests: state.paymentRequests.filter((req) => req.id !== id),
-    })),
 
   // Form state
   setReuseAddress: (reuse) =>
@@ -196,6 +167,19 @@ export const createReceiveSlice: SliceCreator<ReceiveSlice> = (set, get) => ({
       selectedRequest: null,
     })),
 
+  // See the comment on ReceiveActions.selectAddressForRequest above for
+  // the full rationale. Note the reuseAddress = true flip: without it,
+  // createPaymentRequest (line ~294) would call generateNewAddress('')
+  // after the submit succeeds and replace the user's picked address
+  // with a brand-new one, silently discarding the pick.
+  selectAddressForRequest: (address) =>
+    set(() => ({
+      currentAddress: address,
+      reuseAddress: true,
+      isAddressesDialogOpen: false,
+      error: null,
+    })),
+
   // Async actions
   fetchReceivingAddresses: async () => {
     set({ isLoading: true, error: null });
@@ -205,6 +189,16 @@ export const createReceiveSlice: SliceCreator<ReceiveSlice> = (set, get) => ({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch receiving addresses';
       set({ error: message, isLoading: false });
+    }
+  },
+
+  fetchAddressBalances: async () => {
+    try {
+      const balances = await GetAddressBalances();
+      set({ addressBalances: balances || {} });
+    } catch {
+      // Silently fail — balances are supplementary info
+      set({ addressBalances: {} });
     }
   },
 

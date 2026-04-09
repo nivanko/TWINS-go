@@ -1198,52 +1198,6 @@ func (wdb *WalletDB) SetStakeSplitThreshold(threshold int64) error {
 	})
 }
 
-// GetAutoCombineRewards gets the autocombine rewards settings
-func (wdb *WalletDB) GetAutoCombineRewards() (bool, int64, error) {
-	var enabled bool
-	var threshold int64
-
-	err := wdb.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(bucketWallet)
-
-		// Get enabled flag
-		enabledData := bucket.Get([]byte("autocombine_enabled"))
-		if len(enabledData) >= 1 {
-			enabled = enabledData[0] != 0
-		}
-
-		// Get threshold
-		thresholdData := bucket.Get([]byte("autocombine_threshold"))
-		if len(thresholdData) >= 8 {
-			threshold = int64(binary.LittleEndian.Uint64(thresholdData))
-		}
-
-		return nil
-	})
-
-	return enabled, threshold, err
-}
-
-// SetAutoCombineRewards sets the autocombine rewards settings
-func (wdb *WalletDB) SetAutoCombineRewards(enabled bool, threshold int64) error {
-	return wdb.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(bucketWallet)
-
-		// Store enabled flag
-		enabledByte := byte(0)
-		if enabled {
-			enabledByte = 1
-		}
-		if err := bucket.Put([]byte("autocombine_enabled"), []byte{enabledByte}); err != nil {
-			return err
-		}
-
-		// Store threshold
-		thresholdBytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(thresholdBytes, uint64(threshold))
-		return bucket.Put([]byte("autocombine_threshold"), thresholdBytes)
-	})
-}
 
 // GetMultiSend gets the multisend entries
 func (wdb *WalletDB) GetMultiSend() ([]MultiSendEntry, error) {

@@ -56,7 +56,8 @@ func (s *Server) registerWalletHandlers() {
 	s.RegisterHandler("reservebalance", s.handleReserveBalance)
 	s.RegisterHandler("setstakesplitthreshold", s.handleSetStakeSplitThreshold)
 	s.RegisterHandler("getstakesplitthreshold", s.handleGetStakeSplitThreshold)
-	s.RegisterHandler("autocombinerewards", s.handleAutoCombineRewards)
+	s.RegisterHandler("setautocombine", s.handleSetAutoCombine)
+	s.RegisterHandler("getautocombine", s.handleGetAutoCombine)
 	s.RegisterHandler("multisend", s.handleMultiSend)
 	s.RegisterHandler("addmultisigaddress", s.handleAddMultisigAddress)
 	s.RegisterHandler("createmultisig", s.handleCreateMultisig)
@@ -2858,8 +2859,9 @@ func (s *Server) handleDumpHDInfo(req *Request) *Response {
 	}
 }
 
-// handleAutoCombineRewards configures automatic reward combining
-func (s *Server) handleAutoCombineRewards(req *Request) *Response {
+// handleSetAutoCombine configures automatic UTXO consolidation
+// Usage: setautocombine <true|false> [target_amount_in_TWINS]
+func (s *Server) handleSetAutoCombine(req *Request) *Response {
 	var params []interface{}
 	if err := json.Unmarshal(req.Params, &params); err != nil || len(params) < 1 {
 		return &Response{
@@ -2878,30 +2880,35 @@ func (s *Server) handleAutoCombineRewards(req *Request) *Response {
 		}
 	}
 
-	var threshold int64
+	var targetTWINS int64
 	if enabled {
 		if len(params) < 2 {
 			return &Response{
 				JSONRPC: "2.0",
-				Error:   NewInvalidParamsError("threshold required when enabling"),
+				Error:   NewInvalidParamsError("target amount required when enabling"),
 				ID:      req.ID,
 			}
 		}
 
-		thresholdFloat, ok := params[1].(float64)
+		targetFloat, ok := params[1].(float64)
 		if !ok {
 			return &Response{
 				JSONRPC: "2.0",
-				Error:   NewInvalidParamsError("threshold must be a number"),
+				Error:   NewInvalidParamsError("target must be a number"),
 				ID:      req.ID,
 			}
 		}
 
-		// Convert TWINS to satoshis
-		threshold = int64(thresholdFloat * 1e8)
+		targetTWINS = int64(targetFloat)
+		if targetTWINS <= 0 {
+			return &Response{
+				JSONRPC: "2.0",
+				Error:   NewInvalidParamsError("target must be positive"),
+				ID:      req.ID,
+			}
+		}
 	}
 
-	// Get wallet instance
 	if s.wallet == nil {
 		return &Response{
 			JSONRPC: "2.0",
@@ -2910,17 +2917,52 @@ func (s *Server) handleAutoCombineRewards(req *Request) *Response {
 		}
 	}
 
-	if err := s.wallet.SetAutoCombineRewards(enabled, threshold); err != nil {
+	// Get current cooldown (preserve it on enable/disable)
+	_, _, cooldown := s.wallet.GetAutoCombineConfig()
+	if cooldown <= 0 {
+		cooldown = 600 // default 10 minutes
+	}
+
+	// Apply immediately (wallet uses satoshis internally)
+	targetSatoshis := targetTWINS * 100_000_000
+	s.wallet.SetAutoCombineConfig(enabled, targetSatoshis, cooldown)
+
+	// Persist to twinsd.yml via ConfigManager (stores TWINS, not satoshis)
+	if s.configSetter != nil {
+		_ = s.configSetter.Set("wallet.autoCombine", enabled)
+		_ = s.configSetter.Set("wallet.autoCombineTarget", targetTWINS)
+		_ = s.configSetter.Set("wallet.autoCombineCooldown", cooldown)
+	}
+
+	result := map[string]interface{}{
+		"enabled":  enabled,
+		"target":   targetTWINS,
+		"cooldown": cooldown,
+	}
+
+	return &Response{
+		JSONRPC: "2.0",
+		Result:  result,
+		ID:      req.ID,
+	}
+}
+
+// handleGetAutoCombine returns the current auto-combine configuration
+func (s *Server) handleGetAutoCombine(req *Request) *Response {
+	if s.wallet == nil {
 		return &Response{
 			JSONRPC: "2.0",
-			Error:   NewInternalError(err.Error()),
+			Error:   NewError(-1, "wallet not available", nil),
 			ID:      req.ID,
 		}
 	}
 
+	enabled, targetSatoshis, cooldown := s.wallet.GetAutoCombineConfig()
+
 	result := map[string]interface{}{
-		"enabled":   enabled,
-		"threshold": float64(threshold) / 1e8,
+		"enabled":  enabled,
+		"target":   targetSatoshis / 100_000_000, // Convert satoshis to TWINS
+		"cooldown": cooldown,
 	}
 
 	return &Response{

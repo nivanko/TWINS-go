@@ -484,14 +484,14 @@ func (a *WalletAdapter) SetStakeSplitThreshold(threshold int64) error {
 	return a.w.SetStakeSplitThreshold(threshold)
 }
 
-// GetAutoCombineRewards gets the autocombine rewards settings
-func (a *WalletAdapter) GetAutoCombineRewards() (bool, int64, error) {
-	return a.w.GetAutoCombineRewards()
+// GetAutoCombineConfig returns the current autocombine configuration
+func (a *WalletAdapter) GetAutoCombineConfig() (enabled bool, target int64, cooldown int) {
+	return a.w.GetAutoCombineConfig()
 }
 
-// SetAutoCombineRewards sets the autocombine rewards settings
-func (a *WalletAdapter) SetAutoCombineRewards(enabled bool, threshold int64) error {
-	return a.w.SetAutoCombineRewards(enabled, threshold)
+// SetAutoCombineConfig updates the autocombine configuration
+func (a *WalletAdapter) SetAutoCombineConfig(enabled bool, target int64, cooldown int) {
+	a.w.SetAutoCombineConfig(enabled, target, cooldown)
 }
 
 // SetTransactionFee sets the transaction fee per kilobyte

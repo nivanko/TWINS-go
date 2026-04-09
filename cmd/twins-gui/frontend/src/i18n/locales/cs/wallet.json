@@ -119,12 +119,6 @@
     "noRequests": "Zatím žádné žádosti o platbu",
     "show": "Zobrazit",
     "remove": "Odstranit",
-    "contextMenu": {
-      "copyLabel": "Kopírovat popisek",
-      "copyAddress": "Kopírovat adresu",
-      "copyMessage": "Kopírovat zprávu",
-      "copyAmount": "Kopírovat částku"
-    },
     "table": {
       "date": "Datum",
       "label": "Popisek",

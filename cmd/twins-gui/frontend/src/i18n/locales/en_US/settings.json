@@ -29,7 +29,6 @@
     "spendUnconfirmedNote": "(experts only)",
     "stakeSplitThreshold": "Stake split threshold:",
     "stakeSplitThresholdNote": "TWINS",
-    "autoCombineRewards": "Auto-combine staking rewards",
     "coinControl": "Enable coin control features",
     "showMasternodes": "Show Masternodes Tab",
     "expert": "Expert",
@@ -41,7 +40,13 @@
     "unlockWalletButton": "Unlock Wallet",
     "changePassphraseButton": "Change Passphrase",
     "encryptionHelpEncrypted": "Your wallet is protected with a passphrase. You will need to unlock it to send transactions. Click the lock icon in the status bar to quickly lock or unlock.",
-    "encryptionHelpNotEncrypted": "Encrypting your wallet adds an extra layer of security. Anyone with access to your computer could steal your funds without encryption."
+    "encryptionHelpNotEncrypted": "Encrypting your wallet adds an extra layer of security. Anyone with access to your computer could steal your funds without encryption.",
+    "autoCombine": "Enable UTXO consolidation (auto-combine)",
+    "autoCombineTarget": "Consolidation target:",
+    "autoCombineTargetHint": "UTXOs below this amount will be combined. Recommended: near your stake split threshold.",
+    "autoCombineCooldown": "Cooldown:",
+    "autoCombineCooldownNote": "seconds between cycles",
+    "autoCombineMigrationNotice": "\"Auto-combine staking rewards\" has been replaced with UTXO Consolidation — a more powerful system that consolidates all small UTXOs, not just staking rewards."
   },
   "network": {
     "title": "Network",

@@ -310,3 +310,45 @@ func BenchmarkWIFEncoding(b *testing.B) {
 		_ = EncodePrivateKeyWIF(keyPair.Private, true, MainNetPubKeyHashAddrID)
 	}
 }
+
+func TestGetPubKeyHashNetworkID(t *testing.T) {
+	cases := []struct {
+		name    string
+		network string
+		want    byte
+	}{
+		{"mainnet", "mainnet", MainNetPubKeyHashAddrID},
+		{"testnet", "testnet", TestNetPubKeyHashAddrID},
+		{"regtest uses testnet prefix", "regtest", TestNetPubKeyHashAddrID},
+		{"empty string falls back to mainnet", "", MainNetPubKeyHashAddrID},
+		{"unknown falls back to mainnet", "wonderland", MainNetPubKeyHashAddrID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GetPubKeyHashNetworkID(tc.network); got != tc.want {
+				t.Errorf("GetPubKeyHashNetworkID(%q) = 0x%02x, want 0x%02x", tc.network, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetScriptHashNetworkID(t *testing.T) {
+	cases := []struct {
+		name    string
+		network string
+		want    byte
+	}{
+		{"mainnet", "mainnet", MainNetScriptHashAddrID},
+		{"testnet", "testnet", TestNetScriptHashAddrID},
+		{"regtest uses testnet prefix", "regtest", TestNetScriptHashAddrID},
+		{"empty string falls back to mainnet", "", MainNetScriptHashAddrID},
+		{"unknown falls back to mainnet", "wonderland", MainNetScriptHashAddrID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GetScriptHashNetworkID(tc.network); got != tc.want {
+				t.Errorf("GetScriptHashNetworkID(%q) = 0x%02x, want 0x%02x", tc.network, got, tc.want)
+			}
+		})
+	}
+}

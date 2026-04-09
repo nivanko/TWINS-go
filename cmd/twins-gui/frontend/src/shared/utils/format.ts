@@ -28,7 +28,7 @@ export function getUnitLabel(displayUnit: number): string {
     case DISPLAY_UNIT_MTWINS:
       return 'mTWINS';
     case DISPLAY_UNIT_UTWINS:
-      return 'uTWINS';
+      return 'µTWINS';
     default:
       return 'TWINS';
   }
@@ -103,12 +103,14 @@ export function formatTransactionDate(date: Date | string): string {
 }
 
 /**
- * Truncate an address for display (show first 8 and last 6 characters)
+ * Truncate an address for display by keeping the beginning and end with an ellipsis in the middle.
  * @param address - The full address
+ * @param startChars - Number of leading characters to keep (default: 10)
+ * @param endChars - Number of trailing characters to keep (default: 10)
  */
-export function truncateAddress(address: string): string {
-  if (address.length <= 20) return address;
-  return `${address.slice(0, 8)}...${address.slice(-6)}`;
+export function truncateAddress(address: string, startChars: number = 10, endChars: number = 10): string {
+  if (address.length <= startChars + endChars + 3) return address;
+  return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;
 }
 
 /**

@@ -119,12 +119,6 @@
     "noRequests": "Ingen betalingsanmodninger endnu",
     "show": "Vis",
     "remove": "Fjern",
-    "contextMenu": {
-      "copyLabel": "Kopiér etiket",
-      "copyAddress": "Kopiér adresse",
-      "copyMessage": "Kopiér besked",
-      "copyAmount": "Kopiér beløb"
-    },
     "table": {
       "date": "Dato",
       "label": "Etiket",

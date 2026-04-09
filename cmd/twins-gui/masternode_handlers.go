@@ -819,7 +819,7 @@ type PaymentStatsFilter struct {
 type PaymentStatsResponse struct {
 	TotalPaid         float64             `json:"totalPaid"`         // Total paid across all MNs in TWINS
 	TotalPayments     int64               `json:"totalPayments"`     // Total payment count
-	UniqueMasternodes int                 `json:"uniqueMasternodes"` // Number of unique payment addresses
+	UniquePaymentAddresses int            `json:"uniquePaymentAddresses"` // Number of unique payment addresses (not necessarily unique masternodes)
 	LowestBlock       uint32              `json:"lowestBlock"`       // Lowest scanned block height
 	HighestBlock      uint32              `json:"highestBlock"`      // Highest scanned block height
 	Entries           []PaymentStatsEntry `json:"entries"`
@@ -876,6 +876,13 @@ func (a *App) GetPaymentStats(filter PaymentStatsFilter) (*PaymentStatsResponse,
 		return emptyResp, nil
 	}
 
+	// Resolve the active network name once so address prefixes match the running chain
+	// (mainnet "W…", testnet/regtest "m…"/"n…"). Empty string falls back to mainnet.
+	networkName := ""
+	if node.ChainParams != nil {
+		networkName = node.ChainParams.Name
+	}
+
 	allStats := node.PaymentTracker.GetAllStats()
 	if len(allStats) == 0 {
 		return emptyResp, nil
@@ -904,8 +911,8 @@ func (a *App) GetPaymentStats(filter PaymentStatsFilter) (*PaymentStatsResponse,
 			continue
 		}
 
-		// Extract TWINS address from scriptPubKey
-		address := extractAddressFromScriptPubKey(scriptBytes)
+		// Extract TWINS address from scriptPubKey using the active network's prefix
+		address := extractAddressFromScriptPubKey(scriptBytes, networkName)
 		if address == "" {
 			continue
 		}
@@ -985,7 +992,7 @@ func (a *App) GetPaymentStats(filter PaymentStatsFilter) (*PaymentStatsResponse,
 	return &PaymentStatsResponse{
 		TotalPaid:         float64(totalPaidSatoshis) / 1e8,
 		TotalPayments:     totalPayments,
-		UniqueMasternodes: totalEntries,
+		UniquePaymentAddresses: totalEntries,
 		LowestBlock:       globalLowest,
 		HighestBlock:      globalHighest,
 		Entries:           pageEntries,
@@ -996,17 +1003,19 @@ func (a *App) GetPaymentStats(filter PaymentStatsFilter) (*PaymentStatsResponse,
 	}, nil
 }
 
-// extractAddressFromScriptPubKey decodes a scriptPubKey to a TWINS address string.
-// Supports P2PKH, P2PK, and P2SH scripts.
-func extractAddressFromScriptPubKey(scriptBytes []byte) string {
+// extractAddressFromScriptPubKey decodes a scriptPubKey to a TWINS address string
+// using the address prefix appropriate for networkName ("mainnet", "testnet", or "regtest").
+// Supports P2PKH, P2PK, and P2SH. An empty or unknown networkName falls back to mainnet
+// prefixes, matching the fallback pattern used by getDefaultPort in tools_handlers.go.
+func extractAddressFromScriptPubKey(scriptBytes []byte, networkName string) string {
 	scriptType, scriptHash := binary.AnalyzeScript(scriptBytes)
 
 	var netID byte
 	switch scriptType {
 	case binary.ScriptTypeP2PKH, binary.ScriptTypeP2PK:
-		netID = crypto.MainNetPubKeyHashAddrID
+		netID = crypto.GetPubKeyHashNetworkID(networkName)
 	case binary.ScriptTypeP2SH:
-		netID = crypto.MainNetScriptHashAddrID
+		netID = crypto.GetScriptHashNetworkID(networkName)
 	default:
 		return ""
 	}

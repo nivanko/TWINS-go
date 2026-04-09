@@ -119,12 +119,6 @@
     "noRequests": "Još nema zahtjeva za plaćanje",
     "show": "Prikaži",
     "remove": "Ukloni",
-    "contextMenu": {
-      "copyLabel": "Kopiraj oznaku",
-      "copyAddress": "Kopiraj adresu",
-      "copyMessage": "Kopiraj poruku",
-      "copyAmount": "Kopiraj iznos"
-    },
     "table": {
       "date": "Datum",
       "label": "Oznaka",

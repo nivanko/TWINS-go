@@ -119,12 +119,6 @@
     "noRequests": "Încă nu există solicitări de plată",
     "show": "Arată",
     "remove": "Elimină",
-    "contextMenu": {
-      "copyLabel": "Copiază eticheta",
-      "copyAddress": "Copiază adresa",
-      "copyMessage": "Copiază mesajul",
-      "copyAmount": "Copiază suma"
-    },
     "table": {
       "date": "Data",
       "label": "Etichetă",

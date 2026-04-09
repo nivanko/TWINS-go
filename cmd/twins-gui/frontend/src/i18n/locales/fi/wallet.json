@@ -119,12 +119,6 @@
     "noRequests": "Ei maksupyyntöjä vielä",
     "show": "Näytä",
     "remove": "Poista",
-    "contextMenu": {
-      "copyLabel": "Kopioi nimike",
-      "copyAddress": "Kopioi osoite",
-      "copyMessage": "Kopioi viesti",
-      "copyAmount": "Kopioi määrä"
-    },
     "table": {
       "date": "Päivämäärä",
       "label": "Nimike",

@@ -11,6 +11,12 @@ import (
 	"github.com/twins-dev/twins-core/pkg/types"
 )
 
+// ConfigSetter allows RPC handlers to persist settings to the daemon config file (twinsd.yml).
+// Implemented by config.ConfigManager.
+type ConfigSetter interface {
+	Set(key string, value interface{}) error
+}
+
 // P2PServer interface for network control operations
 type P2PServer interface {
 	// Peer management
@@ -98,8 +104,8 @@ type WalletInterface interface {
 	SetReserveBalance(enabled bool, amount int64) error
 	GetStakeSplitThreshold() (int64, error)
 	SetStakeSplitThreshold(threshold int64) error
-	GetAutoCombineRewards() (bool, int64, error)
-	SetAutoCombineRewards(enabled bool, threshold int64) error
+	GetAutoCombineConfig() (enabled bool, target int64, cooldown int)
+	SetAutoCombineConfig(enabled bool, target int64, cooldown int)
 	SetTransactionFee(feePerKB int64) error
 	AddMultisigAddress(nrequired int, keys []string, account string) (string, error)
 	GetMultiSend() (interface{}, error)

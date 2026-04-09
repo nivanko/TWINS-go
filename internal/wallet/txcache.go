@@ -208,12 +208,74 @@ func (w *Wallet) LoadTransactionCache() error {
 		w.balances[addr] = bal
 	}
 
+	// Restore the in-memory `Used` flag on every address that appears in
+	// the loaded transactions, UTXOs, or balances. The flag is not
+	// persisted in the cache file (nor in wallet.dat), so without this
+	// pass every address would look unused after a cache-first startup,
+	// breaking callers like ListAddressGroupings that filter on Used.
+	markedUsed := w.markAddressesUsedFromStateLocked()
+
 	w.logger.WithField("transactions", txCount).
 		WithField("utxos", utxoCount).
 		WithField("balances", balCount).
+		WithField("marked_used", markedUsed).
 		Info("Loaded wallet transaction cache")
 
 	return nil
+}
+
+// markAddressesUsedFromStateLocked sets Used=true on every address that
+// currently appears in the wallet transaction map, UTXO map, or balance
+// map. Caller must hold w.mu (write lock). Returns the number of
+// addresses newly marked as used.
+//
+// Two sources of truth must be kept in sync to match MarkAddressUsed
+// semantics (addresses.go:314-329): the per-address `Used` field
+// consulted by `ListAddressGroupings` / `GetReceivingAddresses`, and
+// the `addrMgr.pool.used` map consulted by `IsAddressUsed`. Updating
+// only one would leave the two diverging after a cache-first startup.
+//
+// The `Used` state is in-memory only (not persisted in txcache.dat or
+// wallet.dat). It is normally set during `RescanAllAddresses`, block
+// notifications, or `MarkAddressUsed`. Cache-first startup skips
+// rescan, so this helper restores the flag from the loaded state.
+func (w *Wallet) markAddressesUsedFromStateLocked() int {
+	if len(w.addresses) == 0 {
+		return 0
+	}
+	var poolUsed map[string]bool
+	if w.addrMgr != nil && w.addrMgr.pool != nil {
+		w.addrMgr.pool.mu.Lock()
+		defer w.addrMgr.pool.mu.Unlock()
+		poolUsed = w.addrMgr.pool.used
+	}
+	marked := 0
+	mark := func(address string) {
+		if address == "" {
+			return
+		}
+		wa, ok := w.addresses[address]
+		if !ok {
+			return
+		}
+		if !wa.Used {
+			wa.Used = true
+			marked++
+		}
+		if poolUsed != nil {
+			poolUsed[address] = true
+		}
+	}
+	for _, tx := range w.transactions {
+		mark(tx.Address)
+	}
+	for _, utxo := range w.utxos {
+		mark(utxo.Address)
+	}
+	for addr := range w.balances {
+		mark(addr)
+	}
+	return marked
 }
 
 // SaveTransactionCache writes transactions, UTXOs, and balances to txcache.dat.

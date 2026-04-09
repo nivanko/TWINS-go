@@ -137,7 +137,7 @@
     "summary": {
       "totalPaid": "Total Paid",
       "totalPayments": "Total Payments",
-      "uniqueMasternodes": "Unique Masternodes",
+      "uniquePaymentAddresses": "Unique Payment Addresses",
       "scannedBlocks": "Scanned Blocks (Low / High)"
     },
     "table": {
@@ -151,6 +151,9 @@
     "copied": "Transaction ID copied",
     "copyTxID": "Copy TX ID",
     "unknown": "Unknown",
+    "fetchError": "Failed to load payment statistics",
+    "retry": "Retry",
+    "dismiss": "Dismiss",
     "pagination": {
       "showing": "Showing {{from}}-{{to}} of {{total}}",
       "page": "Page {{page}} of {{total}}",

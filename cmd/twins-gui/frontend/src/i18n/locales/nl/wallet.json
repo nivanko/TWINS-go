@@ -119,12 +119,6 @@
     "noRequests": "Nog geen betalingsverzoeken",
     "show": "Tonen",
     "remove": "Verwijderen",
-    "contextMenu": {
-      "copyLabel": "Label kopiëren",
-      "copyAddress": "Adres kopiëren",
-      "copyMessage": "Bericht kopiëren",
-      "copyAmount": "Bedrag kopiëren"
-    },
     "table": {
       "date": "Datum",
       "label": "Label",

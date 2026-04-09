@@ -186,9 +186,10 @@ export const TransactionDetailsDialog: React.FC<TransactionDetailsDialogProps> =
   );
   const formattedDate = formatTransactionDate(transaction.time);
   const formattedDateUTC = formatTransactionDateUTC(transaction.time);
-  // send_to_self net amount equals -(fee), which is technically correct but
+  // send_to_self and consolidation net amount equals -(fee), which is technically correct but
   // not a loss — use neutral color instead of red to avoid confusion.
-  const amountColorClass = transaction.type === 'send_to_self'
+  const isSelfTransfer = transaction.type === 'send_to_self' || transaction.type === 'consolidation';
+  const amountColorClass = isSelfTransfer
     ? 'text-gray-400'
     : getAmountColorClass(transaction.amount);
 
@@ -369,7 +370,9 @@ export const TransactionDetailsDialog: React.FC<TransactionDetailsDialogProps> =
                 {transaction.address && (
                   <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <span className="qt-label" style={{ fontSize: '12px', color: '#888' }}>
-                      {transaction.type === 'send_to_self'
+                      {transaction.type === 'consolidation'
+                        ? 'Consolidated to'
+                        : transaction.type === 'send_to_self'
                         ? 'To yourself'
                         : (isSend ? 'To' : (isReceive ? 'Received with' : 'Address'))}
                     </span>
@@ -437,9 +440,9 @@ export const TransactionDetailsDialog: React.FC<TransactionDetailsDialogProps> =
             >
               <div className="qt-vbox" style={{ gap: '8px' }}>
                 {/* Debit/Credit */}
-                {/* For send_to_self, debit equals the fee which is already shown in the
+                {/* For send_to_self/consolidation, debit equals the fee which is already shown in the
                     Transaction Fee row below — suppress the redundant debit entry. */}
-                {transaction.debit !== undefined && transaction.debit !== 0 && transaction.type !== 'send_to_self' && (
+                {transaction.debit !== undefined && transaction.debit !== 0 && !isSelfTransfer && (
                   <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="qt-label" style={{ fontSize: '12px', color: '#888' }}>Debit</span>
                     <span className="qt-label text-red-400" style={{ fontSize: '12px', fontFamily: 'monospace' }}>

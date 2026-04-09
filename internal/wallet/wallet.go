@@ -128,6 +128,19 @@ type Wallet struct {
 	// Wallet rebroadcast scheduler (legacy-like periodic rebroadcast)
 	rebroadcastCancel context.CancelFunc
 	lastRebroadcast   map[types.Hash]time.Time // Per-tx cooldown state
+
+	// Sent transaction comments — in-memory map of tx hash → comment for locally-sent transactions.
+	// Populated by SendMany/SendManyWithOptions before broadcast. Read by processBlock/OnMempoolTransaction
+	// to set WalletTransaction.Comment. Entries cleaned up after confirmation.
+	// Protected by mu (written under Lock in send paths, read under RLock/Lock in notification paths).
+	sentTxComments map[types.Hash]string
+
+	// Auto-combine inputs (UTXO consolidation)
+	autoCombineWorker       *AutoCombineWorker
+	autoCombineEnabled      bool
+	autoCombineTarget       int64
+	autoCombineCooldown     int
+	onConsolidationCallback func(txCount int, totalAmount int64) // Called after consolidation cycle; invoked outside mutex
 }
 
 // Config contains wallet configuration
@@ -590,7 +603,66 @@ func (w *Wallet) LoadWallet() error {
 }
 
 // Close saves and closes the wallet
+// StartAutoCombine starts the autocombine worker if not already running.
+func (w *Wallet) StartAutoCombine() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.autoCombineWorker != nil {
+		return
+	}
+	worker := newAutoCombineWorker(w)
+	w.autoCombineWorker = worker
+	worker.Start()
+	w.logger.Info("autocombine: worker started")
+}
+
+// StopAutoCombine stops the autocombine worker if running.
+func (w *Wallet) StopAutoCombine() {
+	w.mu.Lock()
+	worker := w.autoCombineWorker
+	w.autoCombineWorker = nil
+	w.mu.Unlock()
+	if worker != nil {
+		worker.Stop()
+		w.logger.Info("autocombine: worker stopped")
+	}
+}
+
+// SetAutoCombineConfig updates autocombine configuration.
+// Starts or stops the worker based on the enabled flag.
+func (w *Wallet) SetAutoCombineConfig(enabled bool, target int64, cooldown int) {
+	w.mu.Lock()
+	w.autoCombineEnabled = enabled
+	w.autoCombineTarget = target
+	w.autoCombineCooldown = cooldown
+	w.mu.Unlock()
+
+	if enabled && target > 0 {
+		w.StartAutoCombine()
+	} else {
+		w.StopAutoCombine()
+	}
+}
+
+// GetAutoCombineConfig returns the current autocombine configuration.
+func (w *Wallet) GetAutoCombineConfig() (enabled bool, target int64, cooldown int) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.autoCombineEnabled, w.autoCombineTarget, w.autoCombineCooldown
+}
+
+// SetOnConsolidationCallback registers a callback invoked after each consolidation cycle.
+// The callback receives the number of transactions submitted and the total amount consolidated.
+func (w *Wallet) SetOnConsolidationCallback(fn func(txCount int, totalAmount int64)) {
+	w.mu.Lock()
+	w.onConsolidationCallback = fn
+	w.mu.Unlock()
+}
+
 func (w *Wallet) Close() error {
+	// Stop autocombine worker before acquiring lock
+	w.StopAutoCombine()
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -1308,7 +1380,7 @@ func (w *Wallet) ListTransactionsFiltered(params TransactionFilterParams) (Trans
 		if !matchesDateFilter(tx.Time, params.DateFilter, params.DateRangeFrom, params.DateRangeTo) {
 			continue
 		}
-		if !matchesTypeFilter(string(tx.Category), params.TypeFilter) {
+		if !matchesTypeFilterWithComment(string(tx.Category), tx.Comment, params.TypeFilter) {
 			continue
 		}
 		if !matchesWatchOnlyFilter(tx.WatchOnly, params.WatchOnlyFilter) {
@@ -1445,6 +1517,19 @@ func matchesTypeFilter(category string, filter string) bool {
 	default:
 		return true
 	}
+}
+
+// matchesTypeFilterWithComment extends matchesTypeFilter with comment-based filtering.
+// Used for types like "consolidation" that are distinguished by comment, not category.
+func matchesTypeFilterWithComment(category, comment, filter string) bool {
+	if filter == "consolidation" {
+		return category == "send_to_self" && comment == "autocombine"
+	}
+	if filter == "toYourself" {
+		// Exclude autocombine transactions from "to yourself" filter
+		return category == "send_to_self" && comment != "autocombine"
+	}
+	return matchesTypeFilter(category, filter)
 }
 
 func matchesWatchOnlyFilter(isWatchOnly bool, filter string) bool {
@@ -1943,10 +2028,75 @@ func (w *Wallet) RescanAllAddresses() error {
 		}
 	}
 
+	// Recovery sweep: phantom-unspent UTXOs whose spending tx is in
+	// storage but was never indexed under any of our addresses (both the
+	// mark-spent AND address-index input-side writes were skipped by an
+	// interrupted batch commit). The per-address reverse reconcile above
+	// cannot find these, so we fall back to a full PrefixTransaction scan
+	// across the currently-tracked unspent UTXOs. This is O(all tx in
+	// storage) — expensive but only runs once per rescan pass.
+	if err := w.phantomUnspentFullScanRecoveryLocked(); err != nil {
+		w.logger.WithError(err).Warn("Phantom-unspent full scan recovery failed")
+	}
+
 	w.logger.WithFields(logrus.Fields{
 		"utxo_count": len(w.utxos),
 		"tx_count":   len(w.transactions),
 	}).Debug("RescanAllAddresses complete")
+
+	return nil
+}
+
+// phantomUnspentFullScanRecoveryLocked performs a one-shot full scan of
+// PrefixTransaction to find spender transactions for any currently
+// unspent wallet UTXOs whose spend was missed during block processing.
+// Caller must hold w.mu (write lock). Called at the end of
+// RescanAllAddresses after per-address reconciliation has run.
+func (w *Wallet) phantomUnspentFullScanRecoveryLocked() error {
+	if len(w.utxos) == 0 {
+		return nil
+	}
+
+	outpoints := make(map[types.Outpoint]struct{}, len(w.utxos))
+	for op := range w.utxos {
+		outpoints[op] = struct{}{}
+	}
+
+	results, err := w.storage.FindAndMarkSpendersForOutpoints(outpoints)
+	if err != nil {
+		return fmt.Errorf("full-scan phantom-unspent recovery: %w", err)
+	}
+	if len(results) == 0 {
+		w.logger.WithField("utxo_count", len(outpoints)).
+			Debug("Phantom-unspent full scan: no unreconciled UTXOs found")
+		return nil
+	}
+
+	// Update in-memory wallet state to match the new storage state:
+	// drop each reconciled outpoint from w.utxos and subtract its value
+	// from the owning address's confirmed balance.
+	for op, info := range results {
+		existing, exists := w.utxos[op]
+		if !exists {
+			continue
+		}
+		if bal := w.balances[existing.Address]; bal != nil {
+			bal.Confirmed -= existing.Output.Value
+		}
+		delete(w.utxos, op)
+		w.logger.WithFields(logrus.Fields{
+			"outpoint": op.String(),
+			"address":  existing.Address,
+			"value":    existing.Output.Value,
+			"spender":  info.SpenderTxHash.String(),
+			"height":   info.SpenderHeight,
+		}).Info("Phantom-unspent full scan: reconciled UTXO as spent")
+	}
+
+	w.logger.WithFields(logrus.Fields{
+		"scanned_utxos": len(outpoints),
+		"reconciled":    len(results),
+	}).Info("Phantom-unspent full scan complete")
 
 	return nil
 }
@@ -2042,10 +2192,19 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 		// (GetTransactionsByAddress can return multiple entries per tx — one per output/input)
 		orphanCleaned := make(map[types.Hash]struct{})
 
+		// Track stale txids: address index points to a transaction that no
+		// longer exists in storage. These are collected and reconciled at the
+		// end of this per-address rescan pass: address index entries removed
+		// and any UTXO still marked as spent by one of these txids is unspent.
+		staleTxids := make(map[types.Hash]struct{})
+
 		// Process each transaction for transaction history
 		for _, addrTx := range addressTxs {
 			// Skip if already cleaned as orphan
 			if _, cleaned := orphanCleaned[addrTx.TxHash]; cleaned {
+				continue
+			}
+			if _, stale := staleTxids[addrTx.TxHash]; stale {
 				continue
 			}
 
@@ -2054,8 +2213,15 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 			// loading the entire block (which can fail if any tx in block is missing)
 			txData, err := w.storage.GetTransactionData(addrTx.TxHash)
 			if err != nil {
-				w.logger.WithError(err).WithField("txhash", addrTx.TxHash.String()).Warn("Failed to get transaction data")
-				continue
+				// Distinguish NotFound (stale address index entry — self-heal)
+				// from transient I/O errors (abort rescan to prevent damage).
+				if storage.IsNotFoundError(err) {
+					staleTxids[addrTx.TxHash] = struct{}{}
+					w.logger.WithField("txhash", addrTx.TxHash.String()).
+						Debug("Stale address index entry detected during rescan (tx not in storage)")
+					continue
+				}
+				return fmt.Errorf("get transaction data for %s: %w", addrTx.TxHash.String(), err)
 			}
 
 			// Verify the transaction's block is on the main chain.
@@ -2170,6 +2336,125 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 			blockHash := txData.BlockHash
 			txIdx := int(txData.TxIndex)
 
+			// Reverse reconciliation (phantom-unspent fix): for every input
+			// of this main-chain-validated transaction, verify that the
+			// consumed UTXO is actually marked as spent in storage. Phantom-
+			// unspent UTXOs arise when a prior block-processing interruption
+			// persisted the transaction itself but missed the mark-spent step
+			// for its inputs, leaving wallet-owned UTXOs visible as
+			// spendable even though the chain has clearly consumed them.
+			//
+			// Safety: we only touch UTXOs that resolve to a wallet-owned
+			// address via isOurScriptLocked — the codebase-wide "is this
+			// ours?" predicate shared with categorizeTransactionLocked
+			// and mempool notifications. The prev UTXO's owning address
+			// may differ from the current rescan address (send-to-self
+			// and change-output flows put the spender tx under the
+			// change recipient's history while consuming an input from
+			// another wallet address), so we deliberately do NOT require
+			// a same-address match. Multi-wallet isolation is enforced
+			// at the storage layer, not by per-address guards inside a
+			// single wallet's rescan loop. The main-chain check above
+			// (GetBlockHashByHeight equality) plus the re-check right
+			// before batch.MarkUTXOSpent together guarantee the spender
+			// tx is on the active chain when we record the spend.
+			if tx != nil && !tx.IsCoinbase() {
+				for _, input := range tx.Inputs {
+					prev := input.PreviousOutput
+					// Skip coinstake-style null prevouts (already filtered
+					// by IsCoinbase above for coinbase, but coinstake marker
+					// inputs use the same null sentinel).
+					if prev.Hash == (types.Hash{}) && prev.Index == 0xffffffff {
+						continue
+					}
+
+					prevUTXO, utxoErr := w.storage.GetUTXO(prev)
+					if utxoErr != nil {
+						continue // not in storage — nothing to reconcile
+					}
+					if prevUTXO == nil || prevUTXO.Output == nil {
+						continue
+					}
+					// Already marked spent — no work needed. If spent by
+					// a different tx we leave it alone (conflict belongs to
+					// a separate investigation, not this rescan).
+					if prevUTXO.SpendingHeight != 0 {
+						continue
+					}
+					// Only reconcile wallet-owned UTXOs. Derive the owning
+					// address from the script; isOurScriptLocked returns
+					// isOurs==true only when the script resolves to an
+					// address we control — that is the full safety guard.
+					//
+					// Do NOT additionally require prevAddr == current rescan
+					// address: send-to-self / change-output patterns create
+					// the spender tx in a DIFFERENT wallet address's history
+					// (the change recipient), while the input being consumed
+					// lives on yet another wallet address. A same-address
+					// restriction would silently skip these common cases and
+					// leave phantom-unspent UTXOs unreconciled — exactly
+					// what we observed on the affected node (71746 txs
+					// walked, zero reconciliations).
+					prevAddr, isOurs := w.isOurScriptLocked(prevUTXO.Output.ScriptPubKey)
+					if !isOurs {
+						continue
+					}
+
+					// Re-validate main-chain membership immediately before
+					// mutating UTXO state. The earlier check at wallet.go:2153
+					// happened before we walked the inputs; in a scenario
+					// where a concurrent block processor disconnects this
+					// block between that check and now, writing the spend
+					// here would record a spender that is no longer on the
+					// active chain. This re-check closes that race window.
+					canonicalHash, chkErr := w.storage.GetBlockHashByHeight(txData.Height)
+					if chkErr != nil {
+						if !storage.IsNotFoundError(chkErr) && !isHeightNotFoundError(chkErr) {
+							return fmt.Errorf("revalidate main chain for %s: %w", addrTx.TxHash.String(), chkErr)
+						}
+						continue
+					}
+					if canonicalHash != txData.BlockHash {
+						continue
+					}
+
+					reverseBatch := w.storage.NewBatch()
+					if _, markErr := reverseBatch.MarkUTXOSpent(prev, txData.Height, addrTx.TxHash); markErr != nil {
+						w.logger.WithError(markErr).WithFields(logrus.Fields{
+							"outpoint": prev.String(),
+							"spender":  addrTx.TxHash.String(),
+						}).Warn("Failed to reconcile phantom-unspent UTXO (mark spent)")
+						continue
+					}
+					if commitErr := reverseBatch.Commit(); commitErr != nil {
+						w.logger.WithError(commitErr).WithFields(logrus.Fields{
+							"outpoint": prev.String(),
+							"spender":  addrTx.TxHash.String(),
+						}).Warn("Failed to commit phantom-unspent reconciliation batch")
+						continue
+					}
+
+					// Update in-memory wallet state to match the new storage
+					// state: drop the UTXO from w.utxos and subtract from
+					// the confirmed balance. This mirrors the forward
+					// orphan-cleanup branch above (wallet.go:2198-2203).
+					if existing, exists := w.utxos[prev]; exists {
+						if bal := w.balances[existing.Address]; bal != nil {
+							bal.Confirmed -= existing.Output.Value
+						}
+						delete(w.utxos, prev)
+					}
+
+					w.logger.WithFields(logrus.Fields{
+						"rescan_address": address,
+						"prev_address":   prevAddr,
+						"outpoint":       prev.String(),
+						"spender":        addrTx.TxHash.String(),
+						"height":         txData.Height,
+					}).Info("Reconciled phantom-unspent UTXO (marked as spent by on-chain tx)")
+				}
+			}
+
 			// Get block timestamp from block header only (not full block with all transactions)
 			var blockTime time.Time
 			block, err := w.storage.GetBlockByHeight(txData.Height)
@@ -2258,6 +2543,29 @@ func (w *Wallet) rescanBlockchainLocked(address string) error {
 					Address:       extra.Address,
 					Vout:          1,
 				}
+			}
+		}
+
+		// Self-heal reconciliation: delete stale address index entries for
+		// transactions that no longer exist in storage, and unspend any UTXO
+		// still marked as spent by one of those stale txids. Without this,
+		// the Warn loops forever and affected UTXOs stay stuck-spent.
+		if len(staleTxids) > 0 {
+			for staleHash := range staleTxids {
+				if err := w.storage.DeleteAddressIndex(addressBinary, staleHash); err != nil {
+					w.logger.WithError(err).WithField("txhash", staleHash.String()).
+						Warn("Failed to delete stale address index entry")
+				}
+			}
+			unspent, err := w.storage.UnspendUTXOsBySpendingTx(staleTxids)
+			if err != nil {
+				w.logger.WithError(err).Warn("Failed to reconcile stuck-spent UTXOs from stale txids")
+			} else if unspent > 0 {
+				w.logger.WithFields(logrus.Fields{
+					"address": address,
+					"stale":   len(staleTxids),
+					"unspent": unspent,
+				}).Info("Reconciled stale address index entries and stuck-spent UTXOs")
 			}
 		}
 	}
@@ -2785,36 +3093,22 @@ func (w *Wallet) SetStakeSplitThreshold(threshold int64) error {
 		return fmt.Errorf("threshold must be non-negative")
 	}
 
+	// Clamp to the hard floor MinStakeSplitThresholdSatoshis. A user who sets a
+	// lower value would otherwise cause CreateCoinstakeTx to produce split
+	// coinstakes whose vout[1] falls below legacy's StakingMinInput (12000
+	// TWINS), which legacy nodes reject at CheckBlock. Threshold 0 remains a
+	// valid "disable splitting" sentinel and is not clamped.
+	if threshold > 0 && threshold < MinStakeSplitThresholdSatoshis {
+		if w.logger != nil {
+			w.logger.Warnf("stake split threshold %d below minimum %d; clamping",
+				threshold, MinStakeSplitThresholdSatoshis)
+		}
+		threshold = MinStakeSplitThresholdSatoshis
+	}
+
 	return w.wdb.SetStakeSplitThreshold(threshold)
 }
 
-// GetAutoCombineRewards gets the autocombine rewards settings
-func (w *Wallet) GetAutoCombineRewards() (bool, int64, error) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	if w.wdb == nil {
-		return false, 0, fmt.Errorf("wallet database not initialized")
-	}
-
-	return w.wdb.GetAutoCombineRewards()
-}
-
-// SetAutoCombineRewards sets the autocombine rewards settings
-func (w *Wallet) SetAutoCombineRewards(enabled bool, threshold int64) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.wdb == nil {
-		return fmt.Errorf("wallet database not initialized")
-	}
-
-	if threshold < 0 {
-		return fmt.Errorf("threshold must be non-negative")
-	}
-
-	return w.wdb.SetAutoCombineRewards(enabled, threshold)
-}
 
 // GetTransactionFee returns the current transaction fee per kilobyte in satoshis
 func (w *Wallet) GetTransactionFee() int64 {

@@ -16,7 +16,6 @@ export interface GUISettings {
 
   // Wallet Settings
   nStakeSplitThreshold: number;
-  fAutoCombineRewards: boolean;
 
   // Coin Control Settings
   fCoinControlFeatures: boolean;

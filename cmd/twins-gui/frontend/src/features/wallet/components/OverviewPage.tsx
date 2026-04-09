@@ -227,6 +227,14 @@ const OverviewPage: React.FC = () => {
       debouncedSilentRefresh();
     });
 
+    // Listen for wallet lock/unlock events to update staking widget immediately
+    const unsubscribeWalletLocked = EventsOn('wallet:locked', () => {
+      debouncedSilentRefresh();
+    });
+    const unsubscribeWalletUnlocked = EventsOn('wallet:unlocked', () => {
+      debouncedSilentRefresh();
+    });
+
     return () => {
       unsubscribeBalance();
       unsubscribeTransaction();
@@ -235,6 +243,8 @@ const OverviewPage: React.FC = () => {
       unsubscribeSynced();
       unsubscribeChainSync();
       unsubscribeStaking();
+      unsubscribeWalletLocked();
+      unsubscribeWalletUnlocked();
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

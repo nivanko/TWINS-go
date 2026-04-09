@@ -119,12 +119,6 @@
     "noRequests": "Все още няма заявки за плащане",
     "show": "Покажи",
     "remove": "Премахни",
-    "contextMenu": {
-      "copyLabel": "Копирай етикет",
-      "copyAddress": "Копирай адрес",
-      "copyMessage": "Копирай съобщение",
-      "copyAmount": "Копирай сума"
-    },
     "table": {
       "date": "Дата",
       "label": "Етикет",

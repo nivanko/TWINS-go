@@ -102,7 +102,7 @@ export interface PaymentStatsFilter {
 export interface PaymentStatsResponse {
   totalPaid: number;          // Total paid across all MNs in TWINS
   totalPayments: number;      // Total payment count
-  uniqueMasternodes: number;  // Number of unique payment addresses
+  uniquePaymentAddresses: number;  // Number of unique payment addresses (not necessarily unique masternodes)
   lowestBlock: number;        // Lowest scanned block height
   highestBlock: number;       // Highest scanned block height
   entries: PaymentStatsEntry[];

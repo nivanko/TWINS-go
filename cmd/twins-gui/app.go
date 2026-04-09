@@ -414,7 +414,6 @@ func (a *App) logSettings(showFullLogs bool) {
 	fmt.Printf("  ShowMasternodesTab:   %v\n", settings.ShowMasternodesTab)
 	fmt.Printf("  ThirdPartyTxUrls:     %s\n", settings.ThirdPartyTxUrls)
 	fmt.Printf("  StakeSplitThreshold:  %d\n", settings.StakeSplitThreshold)
-	fmt.Printf("  AutoCombineRewards:   %v\n", settings.AutoCombineRewards)
 	fmt.Printf("  CoinControlFeatures:  %v\n", settings.CoinControlFeatures)
 	fmt.Printf("  CoinControlMode:      %d\n", settings.CoinControlMode)
 	fmt.Printf("  CoinControlSortCol:   %d\n", settings.CoinControlSortColumn)
@@ -717,9 +716,6 @@ func (a *App) initializeFullDaemon() {
 		if err := node.Wallet.SetStakeSplitThreshold(guiSettings.StakeSplitThreshold); err != nil {
 			logrus.WithError(err).Warn("Failed to apply stake split threshold from GUI settings")
 		}
-		if err := node.Wallet.SetAutoCombineRewards(guiSettings.AutoCombineRewards, guiSettings.StakeSplitThreshold); err != nil {
-			logrus.WithError(err).Warn("Failed to apply auto-combine rewards from GUI settings")
-		}
 	}
 
 	// Wire wallet lock callback to emit Wails event for frontend state sync.
@@ -743,6 +739,18 @@ func (a *App) initializeFullDaemon() {
 			}
 			// Emit wallet:locked event so frontend updates lock icon immediately
 			runtime.EventsEmit(appCtx, "wallet:locked", nil)
+		})
+	}
+
+	// Wire consolidation callback for GUI toast notifications
+	if node.Wallet != nil {
+		walletCtx := a.ctx
+		node.Wallet.SetOnConsolidationCallback(func(txCount int, totalAmount int64) {
+			amountTWINS := float64(totalAmount) / 100_000_000
+			runtime.EventsEmit(walletCtx, "autocombine:complete", map[string]interface{}{
+				"txCount": txCount,
+				"amount":  amountTWINS,
+			})
 		})
 	}
 

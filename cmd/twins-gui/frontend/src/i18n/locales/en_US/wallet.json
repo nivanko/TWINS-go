@@ -151,12 +151,6 @@
     "noRequests": "No payment requests yet",
     "show": "Show",
     "remove": "Remove",
-    "contextMenu": {
-      "copyLabel": "Copy Label",
-      "copyAddress": "Copy Address",
-      "copyMessage": "Copy Message",
-      "copyAmount": "Copy Amount"
-    },
     "table": {
       "date": "Date",
       "label": "Label",

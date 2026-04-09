@@ -119,12 +119,6 @@
     "noRequests": "Nessuna richiesta di pagamento",
     "show": "Mostra",
     "remove": "Rimuovi",
-    "contextMenu": {
-      "copyLabel": "Copia etichetta",
-      "copyAddress": "Copia indirizzo",
-      "copyMessage": "Copia messaggio",
-      "copyAmount": "Copia importo"
-    },
     "table": {
       "date": "Data",
       "label": "Etichetta",

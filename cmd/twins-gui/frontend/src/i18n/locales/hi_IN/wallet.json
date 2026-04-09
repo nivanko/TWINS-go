@@ -119,12 +119,6 @@
     "noRequests": "अभी तक कोई भुगतान अनुरोध नहीं",
     "show": "दिखाएँ",
     "remove": "हटाएँ",
-    "contextMenu": {
-      "copyLabel": "लेबल कॉपी करें",
-      "copyAddress": "पता कॉपी करें",
-      "copyMessage": "संदेश कॉपी करें",
-      "copyAmount": "राशि कॉपी करें"
-    },
     "table": {
       "date": "तिथि",
       "label": "लेबल",

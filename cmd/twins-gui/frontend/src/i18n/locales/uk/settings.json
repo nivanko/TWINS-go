@@ -29,10 +29,15 @@
     "spendUnconfirmedNote": "(тільки для експертів)",
     "stakeSplitThreshold": "Поріг розділення стейку:",
     "stakeSplitThresholdNote": "TWINS",
-    "autoCombineRewards": "Авто-об'єднання нагород стейкінгу",
     "coinControl": "Увімкнути функції контролю монет",
     "showMasternodes": "Показати вкладку Мастернод",
-    "expert": "Експерт"
+    "expert": "Експерт",
+    "autoCombine": "Enable UTXO consolidation (auto-combine)",
+    "autoCombineTarget": "Consolidation target:",
+    "autoCombineTargetHint": "UTXOs below this amount will be combined. Recommended: near your stake split threshold.",
+    "autoCombineCooldown": "Cooldown:",
+    "autoCombineCooldownNote": "seconds between cycles",
+    "autoCombineMigrationNotice": "\"Auto-combine staking rewards\" has been replaced with UTXO Consolidation — a more powerful system that consolidates all small UTXOs, not just staking rewards."
   },
   "network": {
     "title": "Мережа",

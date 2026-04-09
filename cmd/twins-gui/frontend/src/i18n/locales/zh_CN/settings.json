@@ -29,10 +29,15 @@
     "spendUnconfirmedNote": "(仅限专家)",
     "stakeSplitThreshold": "权益分割阈值：",
     "stakeSplitThresholdNote": "TWINS",
-    "autoCombineRewards": "自动合并权益奖励",
     "coinControl": "启用币控制功能",
     "showMasternodes": "显示主节点标签页",
-    "expert": "专家"
+    "expert": "专家",
+    "autoCombine": "Enable UTXO consolidation (auto-combine)",
+    "autoCombineTarget": "Consolidation target:",
+    "autoCombineTargetHint": "UTXOs below this amount will be combined. Recommended: near your stake split threshold.",
+    "autoCombineCooldown": "Cooldown:",
+    "autoCombineCooldownNote": "seconds between cycles",
+    "autoCombineMigrationNotice": "\"Auto-combine staking rewards\" has been replaced with UTXO Consolidation — a more powerful system that consolidates all small UTXOs, not just staking rewards."
   },
   "network": {
     "title": "网络",

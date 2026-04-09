@@ -29,10 +29,15 @@
     "spendUnconfirmedNote": "(上級者のみ)",
     "stakeSplitThreshold": "ステーク分割しきい値：",
     "stakeSplitThresholdNote": "TWINS",
-    "autoCombineRewards": "ステーキング報酬を自動で統合",
     "coinControl": "コインコントロール機能を有効化",
     "showMasternodes": "マスターノードタブを表示",
-    "expert": "上級者"
+    "expert": "上級者",
+    "autoCombine": "Enable UTXO consolidation (auto-combine)",
+    "autoCombineTarget": "Consolidation target:",
+    "autoCombineTargetHint": "UTXOs below this amount will be combined. Recommended: near your stake split threshold.",
+    "autoCombineCooldown": "Cooldown:",
+    "autoCombineCooldownNote": "seconds between cycles",
+    "autoCombineMigrationNotice": "\"Auto-combine staking rewards\" has been replaced with UTXO Consolidation — a more powerful system that consolidates all small UTXOs, not just staking rewards."
   },
   "network": {
     "title": "ネットワーク",

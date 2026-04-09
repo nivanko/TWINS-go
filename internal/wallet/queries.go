@@ -341,3 +341,20 @@ func (w *Wallet) ListAddressGroupings() ([][][]interface{}, error) {
 
 	return result, nil
 }
+
+// GetTotalBalancesByAddress returns the total balance for each address in satoshis.
+// Includes all unspent UTXOs regardless of lock state, maturity, or pending-spent status.
+// Excludes already-spent UTXOs (Spendable=false in the UTXO map means the output was consumed).
+func (w *Wallet) GetTotalBalancesByAddress() map[string]int64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	balances := make(map[string]int64)
+	for _, utxo := range w.utxos {
+		if !utxo.Spendable {
+			continue
+		}
+		balances[utxo.Address] += utxo.Output.Value
+	}
+	return balances
+}

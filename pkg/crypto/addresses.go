@@ -55,6 +55,19 @@ func GetScriptHashNetworkID(networkName string) byte {
 	}
 }
 
+// GetPubKeyHashNetworkID returns the appropriate P2PKH address prefix for the given network name.
+// RegTest uses testnet prefixes to match legacy chainparams.cpp behavior.
+func GetPubKeyHashNetworkID(networkName string) byte {
+	switch networkName {
+	case "testnet":
+		return TestNetPubKeyHashAddrID
+	case "regtest":
+		return TestNetPubKeyHashAddrID // RegTest uses testnet addresses
+	default:
+		return MainNetPubKeyHashAddrID
+	}
+}
+
 // Address represents a TWINS address
 type Address struct {
 	hash    []byte

@@ -352,6 +352,7 @@ export const Transactions: React.FC = () => {
     { value: 'mined', label: 'Mined' },
     { value: 'minted', label: 'Minted' },
     { value: 'masternode', label: 'Masternode Reward' },
+    { value: 'consolidation', label: 'UTXO Consolidation' },
     { value: 'other', label: 'Other' },
   ];
 

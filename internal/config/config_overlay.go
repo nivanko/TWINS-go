@@ -92,8 +92,9 @@ type RPCConfigOverlay struct {
 
 // StakingConfigOverlay is the overlay for StakingConfig
 type StakingConfigOverlay struct {
-	Enabled        *bool  `yaml:"enabled"`
-	ReserveBalance *int64 `yaml:"reserveBalance"`
+	Enabled             *bool  `yaml:"enabled"`
+	ReserveBalance      *int64 `yaml:"reserveBalance"`
+	StakeSplitThreshold *int64 `yaml:"stakeSplitThreshold"`
 }
 
 // MasternodeConfigOverlay is the overlay for MasternodeConfig
@@ -121,6 +122,9 @@ type WalletConfigOverlay struct {
 	SpendZeroConfChange *bool   `yaml:"spendZeroConfChange"`
 	CreateWalletBackups *int    `yaml:"createWalletBackups"`
 	BackupPath          *string `yaml:"backupPath"`
+	AutoCombine         *bool   `yaml:"autoCombine"`
+	AutoCombineTarget   *int64  `yaml:"autoCombineTarget"`
+	AutoCombineCooldown *int    `yaml:"autoCombineCooldown"`
 	Mnemonic            *string `yaml:"mnemonic,omitempty"`
 	MnemonicPassphrase  *string `yaml:"mnemonicPassphrase,omitempty"`
 	HDSeed              *string `yaml:"hdSeed,omitempty"`
@@ -361,6 +365,9 @@ func (s *StakingConfig) mergeFrom(o *StakingConfigOverlay) {
 	if o.ReserveBalance != nil {
 		s.ReserveBalance = *o.ReserveBalance
 	}
+	if o.StakeSplitThreshold != nil {
+		s.StakeSplitThreshold = *o.StakeSplitThreshold
+	}
 }
 
 func (m *MasternodeConfig) mergeFrom(o *MasternodeConfigOverlay) {
@@ -426,6 +433,15 @@ func (w *WalletConfig) mergeFrom(o *WalletConfigOverlay) {
 	}
 	if o.HDSeed != nil {
 		w.HDSeed = *o.HDSeed
+	}
+	if o.AutoCombine != nil {
+		w.AutoCombine = *o.AutoCombine
+	}
+	if o.AutoCombineTarget != nil {
+		w.AutoCombineTarget = *o.AutoCombineTarget
+	}
+	if o.AutoCombineCooldown != nil {
+		w.AutoCombineCooldown = *o.AutoCombineCooldown
 	}
 }
 

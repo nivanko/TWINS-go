@@ -110,7 +110,8 @@
     "stakingActive": "Staking active",
     "stakingInactive": "Staking inactive",
     "connections": "{{count}} network connection",
-    "connections_other": "{{count}} network connections"
+    "connections_other": "{{count}} network connections",
+    "unitTooltip": "Unit to show amounts in. Click to select another unit."
   },
   "p2pError": {
     "title": "Network Connection Error",

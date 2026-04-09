@@ -128,6 +128,9 @@ export const OptionsDialog: React.FC = () => {
             metadata={metadata}
             themes={availableThemes}
             onChange={updateSetting}
+            daemonValues={daemonValues}
+            pendingDaemonChanges={pendingDaemonChanges}
+            onDaemonChange={updateDaemonSetting}
           />
         );
       case 'daemon':

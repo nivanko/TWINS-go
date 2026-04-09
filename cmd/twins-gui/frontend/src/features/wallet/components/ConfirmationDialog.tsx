@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, AlertTriangle, CheckCircle, Copy, ExternalLink, Coins, MapPin, Layers } from 'lucide-react';
 import { BrowserOpenURL } from '@wailsjs/runtime/runtime';
 import { sanitizeErrorMessage } from '@/shared/utils/sanitize';
+import { truncateAddress } from '@/shared/utils/format';
 import { PassphraseInput } from '@/shared/components/PassphraseInput';
 
 export interface Recipient {
@@ -222,11 +223,6 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   const formatAmount = (amount: number | string): string => {
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
     return num.toFixed(8);
-  };
-
-  const truncateAddress = (address: string): string => {
-    if (address.length <= 20) return address;
-    return `${address.substring(0, 10)}...${address.substring(address.length - 10)}`;
   };
 
   if (!isOpen) return null;

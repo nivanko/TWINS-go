@@ -50,6 +50,25 @@ function MenuEventHandler() {
   return <OptionsDialog />;
 }
 
+// Component that handles autocombine consolidation complete events
+function AutoCombineEventHandler() {
+  const { addNotification } = useNotifications();
+
+  useEffect(() => {
+    const unlisten = EventsOn('autocombine:complete', (data: { txCount: number; amount: number }) => {
+      addNotification({
+        type: 'success',
+        title: 'UTXO Consolidation',
+        message: `Consolidated ${data.txCount} transaction${data.txCount > 1 ? 's' : ''} (${data.amount.toFixed(2)} TWINS)`,
+        duration: 8000,
+      });
+    });
+    return () => { unlisten(); };
+  }, [addNotification]);
+
+  return null;
+}
+
 // Component that handles Backup Wallet menu event
 // Must be inside StoreProvider to access useNotifications hook
 function BackupWalletEventHandler() {
@@ -437,6 +456,7 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <StoreProvider>
             <MenuEventHandler />
+            <AutoCombineEventHandler />
             <BackupWalletEventHandler />
             <ToolsWindowEventHandler />
             <SignVerifyEventHandler />

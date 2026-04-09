@@ -136,6 +136,53 @@ func registerAllSettings(cm *ConfigManager) {
 		},
 	})
 
+	// ==================== Auto-Combine Inputs ====================
+	cm.Register(&settingDef{
+		SettingMeta: SettingMeta{
+			Key: "wallet.autoCombine", Type: TypeBool, Default: false,
+			Category: "wallet", Label: "Auto-Combine Inputs",
+			Description: "Automatically consolidate small UTXOs into larger ones",
+			HotReload:   true, CLIFlag: "autocombine",
+		},
+		getter: func(c *Config) interface{} { return c.Wallet.AutoCombine },
+		setter: func(c *Config, v interface{}) error { c.Wallet.AutoCombine = v.(bool); return nil },
+	})
+	cm.Register(&settingDef{
+		SettingMeta: SettingMeta{
+			Key: "wallet.autoCombineTarget", Type: TypeInt64, Default: int64(0),
+			Category: "wallet", Label: "Auto-Combine Target",
+			Description: "Target amount in TWINS for UTXO consolidation (0 = disabled)",
+			HotReload:   true, CLIFlag: "autocombine-target",
+			Units: "TWINS", Validation: minOnly(0),
+		},
+		getter: func(c *Config) interface{} { return c.Wallet.AutoCombineTarget },
+		setter: func(c *Config, v interface{}) error { c.Wallet.AutoCombineTarget = v.(int64); return nil },
+	})
+	cm.Register(&settingDef{
+		SettingMeta: SettingMeta{
+			Key: "wallet.autoCombineCooldown", Type: TypeInt, Default: 600,
+			Category: "wallet", Label: "Auto-Combine Cooldown",
+			Description: "Minimum seconds between consolidation cycles (60-3600)",
+			HotReload:   true, CLIFlag: "autocombine-cooldown",
+			Units: "seconds", Validation: minmax(60, 3600),
+		},
+		getter: func(c *Config) interface{} { return c.Wallet.AutoCombineCooldown },
+		setter: func(c *Config, v interface{}) error { c.Wallet.AutoCombineCooldown = v.(int); return nil },
+	})
+
+	// ==================== Stake Split Threshold ====================
+	cm.Register(&settingDef{
+		SettingMeta: SettingMeta{
+			Key: "staking.stakeSplitThreshold", Type: TypeInt64, Default: int64(200000),
+			Category: "staking", Label: "Stake Split Threshold",
+			Description: "Split staking outputs when reward/2 exceeds this amount in TWINS (default: 200000)",
+			HotReload:   true, CLIFlag: "stakesplitthreshold",
+			Units: "TWINS", Validation: minOnly(0),
+		},
+		getter: func(c *Config) interface{} { return c.Staking.StakeSplitThreshold },
+		setter: func(c *Config, v interface{}) error { c.Staking.StakeSplitThreshold = v.(int64); return nil },
+	})
+
 	// ==================== Network ====================
 	cm.Register(&settingDef{
 		SettingMeta: SettingMeta{

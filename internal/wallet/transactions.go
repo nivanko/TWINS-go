@@ -166,6 +166,17 @@ func (w *Wallet) SendMany(recipients map[string]int64, comment string) (string, 
 		return "", fmt.Errorf("signed transaction size %d bytes exceeds maximum %d", actualSize, MaxStandardTxSize)
 	}
 
+	// Store comment before broadcast so OnMempoolTransaction can read it
+	if comment != "" {
+		txHash := signedTx.Hash()
+		w.mu.Lock()
+		if w.sentTxComments == nil {
+			w.sentTxComments = make(map[types.Hash]string)
+		}
+		w.sentTxComments[txHash] = comment
+		w.mu.Unlock()
+	}
+
 	// Broadcast transaction to the network
 	broadcasted, err := w.broadcastTransaction(signedTx)
 	if err != nil {
@@ -303,6 +314,17 @@ func (w *Wallet) SendManyWithOptions(recipients map[string]int64, comment string
 			"size": actualSize, "max": MaxStandardTxSize,
 		}).Error("SendManyWithOptions: signed TX exceeds size limit")
 		return "", fmt.Errorf("signed transaction size %d bytes exceeds maximum %d", actualSize, MaxStandardTxSize)
+	}
+
+	// Store comment before broadcast so OnMempoolTransaction can read it
+	if comment != "" {
+		txHash := signedTx.Hash()
+		w.mu.Lock()
+		if w.sentTxComments == nil {
+			w.sentTxComments = make(map[types.Hash]string)
+		}
+		w.sentTxComments[txHash] = comment
+		w.mu.Unlock()
 	}
 
 	// Broadcast transaction to the network

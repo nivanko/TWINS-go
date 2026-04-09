@@ -168,6 +168,39 @@ func (cs *CachedStorage) FlushCache() {
 	cs.logger.Debug("UTXO cache flushed")
 }
 
+// UnspendUTXOsBySpendingTx delegates to the underlying storage and flushes the
+// UTXO cache on success. The cache is purged rather than selectively
+// invalidated because the underlying implementation does not expose the
+// affected outpoints; this operation is rare (wallet rescan reconciliation)
+// so the full purge is acceptable.
+func (cs *CachedStorage) UnspendUTXOsBySpendingTx(txHashes map[types.Hash]struct{}) (int, error) {
+	unspent, err := cs.Storage.UnspendUTXOsBySpendingTx(txHashes)
+	if unspent > 0 {
+		cs.utxoCache.Purge()
+		cs.logger.WithField("unspent", unspent).Debug("UTXO cache purged after stale-spend reconciliation")
+	}
+	return unspent, err
+}
+
+// FindAndMarkSpendersForOutpoints delegates to the underlying storage and
+// selectively invalidates cache entries for the outpoints that were
+// marked as spent. Unlike UnspendUTXOsBySpendingTx this path returns
+// the exact outpoint set, so we can invalidate precisely instead of
+// purging the entire cache.
+func (cs *CachedStorage) FindAndMarkSpendersForOutpoints(outpoints map[types.Outpoint]struct{}) (map[types.Outpoint]SpenderInfo, error) {
+	results, err := cs.Storage.FindAndMarkSpendersForOutpoints(outpoints)
+	if err != nil {
+		return results, err
+	}
+	for op := range results {
+		cs.utxoCache.Remove(makeUTXOCacheKey(op))
+	}
+	if len(results) > 0 {
+		cs.logger.WithField("marked_spent", len(results)).Debug("UTXO cache entries invalidated after phantom-unspent full scan")
+	}
+	return results, nil
+}
+
 // GetCacheMetrics returns current cache metrics
 func (cs *CachedStorage) GetCacheMetrics() *CacheMetrics {
 	return cs.metrics

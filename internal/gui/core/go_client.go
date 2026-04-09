@@ -1160,6 +1160,11 @@ func (c *GoCoreClient) convertWalletTransaction(wtx *wallet.WalletTransaction) T
 	// Map wallet TxCategory to core TransactionType
 	txType := mapCategoryToType(wtx.Category)
 
+	// Override type for autocombine consolidation transactions
+	if txType == TxTypeSendToSelf && wtx.Comment == "autocombine" {
+		txType = TxTypeConsolidation
+	}
+
 	// Calculate amount as float64
 	amount := float64(wtx.Amount) / satoshisPerTWINS
 	fee := float64(wtx.Fee) / satoshisPerTWINS
@@ -1413,6 +1418,8 @@ func mapTypeToLabel(t TransactionType) string {
 		return "Minted"
 	case TxTypeMNReward:
 		return "Masternode Reward"
+	case TxTypeConsolidation:
+		return "UTXO Consolidation"
 	default:
 		return string(t)
 	}

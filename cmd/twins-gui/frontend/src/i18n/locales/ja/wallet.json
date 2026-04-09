@@ -119,12 +119,6 @@
     "noRequests": "支払いリクエストはありません",
     "show": "表示",
     "remove": "削除",
-    "contextMenu": {
-      "copyLabel": "ラベルをコピー",
-      "copyAddress": "アドレスをコピー",
-      "copyMessage": "メッセージをコピー",
-      "copyAmount": "金額をコピー"
-    },
     "table": {
       "date": "日付",
       "label": "ラベル",

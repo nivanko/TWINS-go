@@ -20,7 +20,6 @@ func NewDefaultSettings() *GUISettings {
 
 		// === Wallet Settings ===
 		StakeSplitThreshold: 200000000000, // 2000 TWINS in satoshis
-		AutoCombineRewards:  true,
 
 		// === Coin Control Settings ===
 		CoinControlFeatures:   false,

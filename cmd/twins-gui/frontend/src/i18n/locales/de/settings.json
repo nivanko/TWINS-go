@@ -29,10 +29,15 @@
     "spendUnconfirmedNote": "(nur für Experten)",
     "stakeSplitThreshold": "Stake-Split-Schwelle:",
     "stakeSplitThresholdNote": "TWINS",
-    "autoCombineRewards": "Staking-Belohnungen automatisch kombinieren",
     "coinControl": "Coin-Control-Funktionen aktivieren",
     "showMasternodes": "Masternodes-Tab anzeigen",
-    "expert": "Experte"
+    "expert": "Experte",
+    "autoCombine": "Enable UTXO consolidation (auto-combine)",
+    "autoCombineTarget": "Consolidation target:",
+    "autoCombineTargetHint": "UTXOs below this amount will be combined. Recommended: near your stake split threshold.",
+    "autoCombineCooldown": "Cooldown:",
+    "autoCombineCooldownNote": "seconds between cycles",
+    "autoCombineMigrationNotice": "\"Auto-combine staking rewards\" has been replaced with UTXO Consolidation — a more powerful system that consolidates all small UTXOs, not just staking rewards."
   },
   "network": {
     "title": "Netzwerk",

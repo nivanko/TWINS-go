@@ -37,15 +37,9 @@ var settingsMetadataMap = map[string]SettingMetadata{
 		Key:             "nStakeSplitThreshold",
 		Tab:             "wallet",
 		RequiresRestart: false,
-		DefaultValue:    int64(2000 * 100000000), // 2000 TWINS in satoshis
+		DefaultValue:    int64(200000 * 100000000), // 200000 TWINS in satoshis
 		MinValue:        int64(0),
 		MaxValue:        int64(999999 * 100000000),
-	},
-	"fAutoCombineRewards": {
-		Key:             "fAutoCombineRewards",
-		Tab:             "wallet",
-		RequiresRestart: false,
-		DefaultValue:    false,
 	},
 	"fCoinControlFeatures": {
 		Key:             "fCoinControlFeatures",

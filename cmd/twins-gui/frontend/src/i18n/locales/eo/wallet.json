@@ -119,12 +119,6 @@
     "noRequests": "Neniuj pago petoj ankoraŭ",
     "show": "Montri",
     "remove": "Forigi",
-    "contextMenu": {
-      "copyLabel": "Kopii etikedon",
-      "copyAddress": "Kopii adreson",
-      "copyMessage": "Kopii mesaĝon",
-      "copyAmount": "Kopii kvanton"
-    },
     "table": {
       "date": "Dato",
       "label": "Etikedo",

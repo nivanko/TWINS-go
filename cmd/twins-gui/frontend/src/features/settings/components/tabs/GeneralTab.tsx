@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Lock, AlertTriangle, Shield, ShieldCheck, Unlock, KeyRound, FolderOpen } from 'lucide-react';
-import { GUISettings, ThemeInfo, SettingMetadata } from '../../../../store/slices/optionsSlice';
+import { GUISettings, ThemeInfo, SettingMetadata, DaemonSettingValue } from '../../../../store/slices/optionsSlice';
 import { SUPPORTED_LANGUAGES } from '../../../../i18n/languages';
 import { GetDataDirectoryInfo, GetWalletEncryptionStatus } from '@wailsjs/go/main/App';
 import { EventsOn, EventsOff, EventsEmit } from '@wailsjs/runtime/runtime';
@@ -12,6 +12,9 @@ interface GeneralTabProps {
   metadata: Record<string, SettingMetadata>;
   themes: ThemeInfo[];
   onChange: (key: string, value: unknown) => void;
+  daemonValues: Record<string, DaemonSettingValue>;
+  pendingDaemonChanges: Record<string, unknown>;
+  onDaemonChange: (key: string, value: unknown) => void;
 }
 
 interface EncryptionStatus {
@@ -19,7 +22,7 @@ interface EncryptionStatus {
   locked: boolean;
 }
 
-export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, themes, onChange }) => {
+export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, themes, onChange, daemonValues, pendingDaemonChanges, onDaemonChange }) => {
   const { t } = useTranslation('settings');
   const isMounted = useRef(false);
 
@@ -27,6 +30,9 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, them
   const [encryptionStatus, setEncryptionStatus] = useState<EncryptionStatus>({
     encrypted: false,
     locked: true,
+  });
+  const [migrationDismissed, setMigrationDismissed] = useState(() => {
+    try { return localStorage.getItem('twins_autocombine_migration_dismissed') === '1'; } catch { return false; }
   });
 
   useEffect(() => {
@@ -118,8 +124,15 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, them
   const handleUnlockWallet = () => EventsEmit('settings:open-unlock-dialog');
   const handleChangePassphrase = () => EventsEmit('settings:open-change-passphrase-dialog');
 
-  const SATOSHIS_PER_TWINS = 100000000;
-  const stakeSplitThreshold = Math.floor((settings.nStakeSplitThreshold ?? 200000000000) / SATOSHIS_PER_TWINS);
+  // Helper to get daemon setting value (pending change takes priority over backend value)
+  const getDaemonValue = (key: string, defaultValue: unknown = '') => {
+    if (key in pendingDaemonChanges) return pendingDaemonChanges[key];
+    return daemonValues[key]?.value ?? defaultValue;
+  };
+  const stakeSplitThreshold = getDaemonValue('staking.stakeSplitThreshold', 200000) as number;
+  const autoCombineEnabled = getDaemonValue('wallet.autoCombine', false) as boolean;
+  const autoCombineTarget = getDaemonValue('wallet.autoCombineTarget', 10000) as number;
+  const autoCombineCooldown = getDaemonValue('wallet.autoCombineCooldown', 600) as number;
 
   const sectionStyle: React.CSSProperties = {
     border: '1px solid #555',
@@ -280,11 +293,8 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, them
           <input
             type="number"
             value={stakeSplitThreshold}
-            onChange={(e) => {
-              const twins = Math.floor(parseFloat(e.target.value) || 0);
-              onChange('nStakeSplitThreshold', twins * SATOSHIS_PER_TWINS);
-            }}
-            min={0} max={999999}
+            onChange={(e) => onDaemonChange('staking.stakeSplitThreshold', Math.floor(parseFloat(e.target.value) || 0))}
+            min={0} max={999999999}
             style={{
               width: '120px', padding: '4px 8px',
               backgroundColor: '#3a3a3a', border: '1px solid #555',
@@ -294,17 +304,86 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, them
           <span style={{ color: '#888', fontSize: '13px', marginLeft: '8px' }}>{t('wallet.stakeSplitThresholdNote')}</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <input
-            type="checkbox" id="fAutoCombineRewards"
-            checked={settings.fAutoCombineRewards ?? false}
-            onChange={(e) => onChange('fAutoCombineRewards', e.target.checked)}
-            style={{ marginRight: '8px' }}
-          />
-          <label htmlFor="fAutoCombineRewards" style={{ color: '#ddd', fontSize: '13px' }}>
-            {t('wallet.autoCombineRewards')}
-          </label>
+        {/* Migration notice — shown once */}
+        {!migrationDismissed && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: '8px',
+            padding: '8px 12px', marginBottom: '12px',
+            backgroundColor: '#3a4a5a', border: '1px solid #4a6a8a',
+            borderRadius: '4px', fontSize: '12px', color: '#aaccee',
+          }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '1px', color: '#4a9af5' }} />
+            <span style={{ flex: 1 }}>{t('wallet.autoCombineMigrationNotice')}</span>
+            <button
+              onClick={() => {
+                setMigrationDismissed(true);
+                try { localStorage.setItem('twins_autocombine_migration_dismissed', '1'); } catch { /* ignore */ }
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#aaccee',
+                cursor: 'pointer', fontSize: '14px', padding: '0 4px', flexShrink: 0,
+              }}
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
+        {/* Auto-Combine (UTXO Consolidation) */}
+        <div style={{ borderTop: '1px solid #444', paddingTop: '12px', marginTop: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+            <input
+              type="checkbox" id="autoCombineEnabled"
+              checked={autoCombineEnabled}
+              onChange={(e) => onDaemonChange('wallet.autoCombine', e.target.checked)}
+              style={{ marginRight: '8px' }}
+            />
+            <label htmlFor="autoCombineEnabled" style={{ color: '#ddd', fontSize: '13px' }}>
+              {t('wallet.autoCombine')}
+            </label>
+          </div>
+
+          {autoCombineEnabled && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                <label style={labelStyle}>{t('wallet.autoCombineTarget')}</label>
+                <input
+                  type="number"
+                  value={autoCombineTarget}
+                  onChange={(e) => onDaemonChange('wallet.autoCombineTarget', Math.floor(parseFloat(e.target.value) || 0))}
+                  min={1000} max={100000000}
+                  placeholder="10000"
+                  style={{
+                    width: '120px', padding: '4px 8px',
+                    backgroundColor: '#3a3a3a', border: '1px solid #555',
+                    borderRadius: '3px', color: '#fff', fontSize: '13px',
+                  }}
+                />
+                <span style={{ color: '#888', fontSize: '13px', marginLeft: '8px' }}>TWINS</span>
+              </div>
+              <div style={{ color: '#666', fontSize: '11px', marginBottom: '12px', marginLeft: '200px' }}>
+                {t('wallet.autoCombineTargetHint')}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <label style={labelStyle}>{t('wallet.autoCombineCooldown')}</label>
+                <input
+                  type="number"
+                  value={autoCombineCooldown}
+                  onChange={(e) => onDaemonChange('wallet.autoCombineCooldown', Math.floor(parseFloat(e.target.value) || 0))}
+                  min={60} max={86400}
+                  style={{
+                    width: '120px', padding: '4px 8px',
+                    backgroundColor: '#3a3a3a', border: '1px solid #555',
+                    borderRadius: '3px', color: '#fff', fontSize: '13px',
+                  }}
+                />
+                <span style={{ color: '#888', fontSize: '13px', marginLeft: '8px' }}>{t('wallet.autoCombineCooldownNote')}</span>
+              </div>
+            </>
+          )}
         </div>
+
       </div>
 
       {/* === Wallet Encryption === */}

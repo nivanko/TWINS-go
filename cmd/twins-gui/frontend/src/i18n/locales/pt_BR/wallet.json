@@ -119,12 +119,6 @@
     "noRequests": "Nenhuma solicitação de pagamento",
     "show": "Mostrar",
     "remove": "Remover",
-    "contextMenu": {
-      "copyLabel": "Copiar rótulo",
-      "copyAddress": "Copiar endereço",
-      "copyMessage": "Copiar mensagem",
-      "copyAmount": "Copiar quantia"
-    },
     "table": {
       "date": "Data",
       "label": "Rótulo",

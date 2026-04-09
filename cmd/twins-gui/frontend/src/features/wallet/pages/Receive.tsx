@@ -1,114 +1,20 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useTranslation, Trans } from 'react-i18next';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { QRCodeCanvas } from 'qrcode.react';
 import { useReceive } from '@/store/useStore';
-import { Copy, Clipboard, ChevronDown } from 'lucide-react';
+import { Copy, RefreshCw, ChevronDown, Eye, Trash2, ExternalLink, Download } from 'lucide-react';
 import { sanitizeText } from '@/shared/utils/sanitize';
+import { useDisplayUnits } from '@/shared/hooks/useDisplayUnits';
+import { buildTwinsURI, MAX_QR_DATA_LENGTH } from '@/shared/utils/twinsUri';
+import { writeToClipboard } from '@/shared/utils/clipboard';
+import { truncateAddress } from '@/shared/utils/format';
+import { SaveQRImage } from '@wailsjs/go/main/App';
+import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
 import { ReceivingAddressesDialog, RequestPaymentDialog } from '@/components/dialogs';
-
-// CSS for dark theme scrollbar and table styling
-const scrollbarStyles = `
-  .history-scroll-container::-webkit-scrollbar {
-    width: 8px;
-  }
-  .history-scroll-container::-webkit-scrollbar-track {
-    background: #2b2b2b;
-    border-radius: 4px;
-  }
-  .history-scroll-container::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 4px;
-  }
-  .history-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #666;
-  }
-
-  .history-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .history-table thead {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-  }
-
-  .history-table th {
-    background: #3a3a3a;
-    padding: 6px 8px;
-    text-align: left;
-    font-weight: normal;
-    font-size: 12px;
-    color: #ccc;
-    border-bottom: 1px solid #555;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .history-table th:hover {
-    background: #444;
-  }
-
-  .history-table td {
-    padding: 6px 8px;
-    font-size: 11px;
-    color: #ddd;
-    border-bottom: 1px solid #3a3a3a;
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    background: #2b2b2b;
-  }
-
-  .history-table tbody tr:hover td {
-    background: #3a3a3a;
-  }
-
-  .history-table tbody tr.selected td {
-    background: #4a5568;
-  }
-
-  .history-table tbody tr.selected:hover td {
-    background: #5a6578;
-  }
-
-  .context-menu {
-    position: fixed;
-    background: #3a3a3a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
-    min-width: 160px;
-    padding: 4px 0;
-  }
-
-  .context-menu-item {
-    padding: 6px 12px;
-    font-size: 12px;
-    color: #ddd;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .context-menu-item:hover {
-    background: #4a5568;
-  }
-`;
 
 // Amount unit options
 const UNIT_OPTIONS = ['TWINS', 'mTWINS', 'uTWINS'] as const;
 type AmountUnit = typeof UNIT_OPTIONS[number];
-
-interface ContextMenuState {
-  visible: boolean;
-  x: number;
-  y: number;
-  requestKey: string | null;
-}
 
 // Helper to generate unique key for payment request (ID is per-address, not global)
 const getRequestKey = (request: { address: string; id: number }): string =>
@@ -116,6 +22,7 @@ const getRequestKey = (request: { address: string; id: number }): string =>
 
 export const Receive: React.FC = () => {
   const { t } = useTranslation('wallet');
+  const { formatAmount } = useDisplayUnits();
   const {
     currentAddress,
     paymentRequests,
@@ -123,6 +30,7 @@ export const Receive: React.FC = () => {
     formState,
     isLoading,
     isCreatingRequest,
+    isGeneratingAddress,
     error,
     setReuseAddress,
     updateFormField,
@@ -131,6 +39,7 @@ export const Receive: React.FC = () => {
     fetchPaymentRequests,
     createPaymentRequest,
     deletePaymentRequest,
+    generateNewAddress,
     isAddressesDialogOpen,
     openAddressesDialog,
     closeAddressesDialog,
@@ -140,17 +49,12 @@ export const Receive: React.FC = () => {
 
   // Local state
   const [selectedUnit, setSelectedUnit] = useState<AmountUnit>('TWINS');
-  const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    requestKey: null,
-  });
-  const [sortColumn, setSortColumn] = useState<'date' | 'label' | 'address' | 'message' | 'amount'>('date');
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<'date' | 'label' | 'amount'>('date');
   const [sortAscending, setSortAscending] = useState(false);
 
-  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const qrRef = useRef<HTMLDivElement>(null);
 
   // Fetch data on mount only
   useEffect(() => {
@@ -159,22 +63,61 @@ export const Receive: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close context menu on click outside
+  // Auto-clear copy feedback
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setContextMenu(prev => ({ ...prev, visible: false }));
-      }
-    };
+    if (!copyFeedback) return;
+    const timeoutId = setTimeout(() => setCopyFeedback(null), 2000);
+    return () => clearTimeout(timeoutId);
+  }, [copyFeedback]);
 
-    if (contextMenu.visible) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+  // Live QR code URI — updates as form fields change
+  const liveURI = useMemo(() => {
+    if (!currentAddress) return '';
+    let amount: number | undefined;
+    if (formState.amount) {
+      const parsed = parseFloat(formState.amount);
+      if (!isNaN(parsed) && parsed > 0) {
+        switch (selectedUnit) {
+          case 'mTWINS': amount = parsed / 1000; break;
+          case 'uTWINS': amount = parsed / 1000000; break;
+          default: amount = parsed;
+        }
+      }
     }
-  }, [contextMenu.visible]);
+    return buildTwinsURI(
+      currentAddress,
+      amount,
+      formState.label || undefined,
+      formState.message || undefined,
+    );
+  }, [currentAddress, formState.amount, formState.label, formState.message, selectedUnit]);
+
+  const isURITooLong = liveURI.length > MAX_QR_DATA_LENGTH;
+
+  // Copy address to clipboard
+  const handleCopyAddress = useCallback(async () => {
+    if (!currentAddress) return;
+    const ok = await writeToClipboard(currentAddress);
+    setCopyFeedback(ok ? t('receive.copied') : t('receive.copyFailed'));
+  }, [currentAddress, t]);
+
+  // Copy URI to clipboard. Falls back to a bare `twins:<address>` URI when
+  // `liveURI` is not yet built so the handler always copies whatever the UI
+  // is currently displaying in the URI row.
+  const handleCopyURI = useCallback(async () => {
+    const uri = liveURI || (currentAddress ? `twins:${currentAddress}` : '');
+    if (!uri) return;
+    const ok = await writeToClipboard(uri);
+    setCopyFeedback(ok ? t('receive.uriCopied') : t('receive.copyFailed'));
+  }, [liveURI, currentAddress, t]);
+
+  // Generate new address
+  const handleNewAddress = useCallback(async () => {
+    await generateNewAddress('');
+  }, [generateNewAddress]);
 
   // Handle form submission
-  const handleRequestPayment = useCallback(async () => {
+  const handleCreateRequest = useCallback(async () => {
     await createPaymentRequest(selectedUnit);
   }, [createPaymentRequest, selectedUnit]);
 
@@ -185,83 +128,24 @@ export const Receive: React.FC = () => {
     setSelectedUnit('TWINS');
   }, [clearForm, clearError]);
 
-  // Handle row selection
-  const handleRowClick = useCallback((key: string) => {
-    setSelectedRowKey(key === selectedRowKey ? null : key);
-  }, [selectedRowKey]);
-
-  // Handle row double-click (show request)
-  const handleRowDoubleClick = useCallback((key: string) => {
-    const request = paymentRequests.find(r => getRequestKey(r) === key);
-    if (request) {
-      openRequestDialog(request);
-    }
-  }, [paymentRequests, openRequestDialog]);
-
-  // Handle context menu
-  const handleContextMenu = useCallback((e: React.MouseEvent, key: string) => {
-    e.preventDefault();
-    setContextMenu({
-      visible: true,
-      x: e.clientX,
-      y: e.clientY,
-      requestKey: key,
+  // Sort payment requests
+  const sortedRequests = useMemo(() => {
+    return [...paymentRequests].sort((a, b) => {
+      let comparison = 0;
+      switch (sortColumn) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'label':
+          comparison = (a.label || '').localeCompare(b.label || '');
+          break;
+        case 'amount':
+          comparison = (a.amount || 0) - (b.amount || 0);
+          break;
+      }
+      return sortAscending ? comparison : -comparison;
     });
-    setSelectedRowKey(key);
-  }, []);
-
-  // Copy to clipboard helper
-  const copyToClipboard = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Clipboard API may fail in some contexts - silently fail
-      // User feedback would require notification system integration
-    }
-    setContextMenu(prev => ({ ...prev, visible: false }));
-  }, []);
-
-  // Context menu actions
-  const handleCopyLabel = useCallback(() => {
-    const request = paymentRequests.find(r => getRequestKey(r) === contextMenu.requestKey);
-    if (request) copyToClipboard(request.label || '');
-  }, [paymentRequests, contextMenu.requestKey, copyToClipboard]);
-
-  const handleCopyAddress = useCallback(() => {
-    const request = paymentRequests.find(r => getRequestKey(r) === contextMenu.requestKey);
-    if (request) copyToClipboard(request.address);
-  }, [paymentRequests, contextMenu.requestKey, copyToClipboard]);
-
-  const handleCopyMessage = useCallback(() => {
-    const request = paymentRequests.find(r => getRequestKey(r) === contextMenu.requestKey);
-    if (request) copyToClipboard(request.message || '');
-  }, [paymentRequests, contextMenu.requestKey, copyToClipboard]);
-
-  const handleCopyAmount = useCallback(() => {
-    const request = paymentRequests.find(r => getRequestKey(r) === contextMenu.requestKey);
-    if (request) copyToClipboard(request.amount?.toString() || '0');
-  }, [paymentRequests, contextMenu.requestKey, copyToClipboard]);
-
-  // Handle Show button
-  const handleShow = useCallback(() => {
-    if (selectedRowKey !== null) {
-      const request = paymentRequests.find(r => getRequestKey(r) === selectedRowKey);
-      if (request) {
-        openRequestDialog(request);
-      }
-    }
-  }, [selectedRowKey, paymentRequests, openRequestDialog]);
-
-  // Handle Remove button
-  const handleRemove = useCallback(async () => {
-    if (selectedRowKey !== null) {
-      const request = paymentRequests.find(r => getRequestKey(r) === selectedRowKey);
-      if (request) {
-        await deletePaymentRequest(request.address, request.id);
-        setSelectedRowKey(null);
-      }
-    }
-  }, [selectedRowKey, paymentRequests, deletePaymentRequest]);
+  }, [paymentRequests, sortColumn, sortAscending]);
 
   // Handle column header click for sorting
   const handleSort = useCallback((column: typeof sortColumn) => {
@@ -269,43 +153,14 @@ export const Receive: React.FC = () => {
       setSortAscending(!sortAscending);
     } else {
       setSortColumn(column);
-      setSortAscending(column === 'date' ? false : true); // Date defaults to descending
+      setSortAscending(column === 'date' ? false : true);
     }
   }, [sortColumn, sortAscending]);
-
-  // Sort payment requests
-  const sortedRequests = [...paymentRequests].sort((a, b) => {
-    let comparison = 0;
-    switch (sortColumn) {
-      case 'date':
-        comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
-        break;
-      case 'label':
-        comparison = (a.label || '').localeCompare(b.label || '');
-        break;
-      case 'address':
-        comparison = a.address.localeCompare(b.address);
-        break;
-      case 'message':
-        comparison = (a.message || '').localeCompare(b.message || '');
-        break;
-      case 'amount':
-        comparison = (a.amount || 0) - (b.amount || 0);
-        break;
-    }
-    return sortAscending ? comparison : -comparison;
-  });
 
   // Format date for display
   const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   // Render sort indicator
@@ -313,10 +168,10 @@ export const Receive: React.FC = () => {
     if (sortColumn !== column) return null;
     return (
       <ChevronDown
-        size={12}
+        size={10}
         style={{
           display: 'inline-block',
-          marginLeft: '4px',
+          marginLeft: '3px',
           transform: sortAscending ? 'rotate(180deg)' : 'rotate(0deg)',
           transition: 'transform 0.2s',
         }}
@@ -324,389 +179,574 @@ export const Receive: React.FC = () => {
     );
   };
 
+  // Handle View button on history row
+  const handleViewRequest = useCallback((key: string) => {
+    const request = paymentRequests.find(r => getRequestKey(r) === key);
+    if (request) openRequestDialog(request);
+  }, [paymentRequests, openRequestDialog]);
+
+  // Handle Remove button - show confirmation first
+  const handleRemoveClick = useCallback((key: string) => {
+    setConfirmRemoveKey(key);
+  }, []);
+
+  const handleConfirmRemove = useCallback(async () => {
+    if (confirmRemoveKey !== null) {
+      const request = paymentRequests.find(r => getRequestKey(r) === confirmRemoveKey);
+      if (request) {
+        await deletePaymentRequest(request.address, request.id);
+      }
+    }
+    setConfirmRemoveKey(null);
+  }, [confirmRemoveKey, paymentRequests, deletePaymentRequest]);
+
+  // Save QR code as image via native save dialog
+  const handleSaveQR = useCallback(async () => {
+    if (!qrRef.current) return;
+    try {
+      const canvas = qrRef.current.querySelector('canvas');
+      if (!canvas) throw new Error('canvas not found');
+      const pngBase64 = canvas.toDataURL('image/png');
+      const defaultFilename = `twins-${currentAddress?.slice(0, 8) || 'qr'}.png`;
+      const saved = await SaveQRImage(pngBase64, defaultFilename);
+      if (saved) {
+        setCopyFeedback(t('receive.qrSaved'));
+      }
+      // If saved === false the user cancelled — show no feedback
+    } catch {
+      setCopyFeedback(t('receive.copyFailed'));
+    }
+  }, [currentAddress, t]);
+
   return (
     <div className="qt-frame" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <style>{scrollbarStyles}</style>
-      <div className="qt-vbox" style={{ padding: '8px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        {/* Page Header */}
-        <div className="qt-header-label" style={{ marginBottom: '8px', fontSize: '18px', flexShrink: 0 }}>
-          {t('receive.title').toUpperCase()}
-        </div>
+      <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: '12px' }}>
 
-        {/* Request Payment Form Section */}
-        <div className="qt-frame-secondary" style={{
-          marginBottom: '8px',
-          padding: '10px',
-          border: '1px solid #4a4a4a',
-          borderRadius: '2px',
-          backgroundColor: '#3a3a3a',
-          flexShrink: 0,
-        }}>
-          <div className="qt-vbox" style={{ gap: '10px' }}>
-            {/* Info text */}
-            <div className="qt-label" style={{ fontSize: '12px', color: '#aaa' }}>
-              <Trans i18nKey="receive.formInfo" ns="wallet">
-                Use this form to request payments. All fields are <strong>optional</strong>.
-              </Trans>
-            </div>
+        {/* Two-column hero section */}
+        <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
 
-            {/* Label field */}
-            <div className="qt-hbox" style={{ alignItems: 'center', gap: '10px' }}>
-              <label htmlFor="receive-label" className="qt-label" style={{ width: '70px', fontSize: '12px', textAlign: 'right' }}>
-                {t('receive.label')}:
-              </label>
-              <input
-                id="receive-label"
-                type="text"
-                value={formState.label}
-                onChange={(e) => updateFormField('label', e.target.value)}
-                className="qt-input"
-                aria-label="Payment request label"
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #1a1a1a',
-                  color: '#ddd',
-                }}
-                placeholder=""
-              />
-            </div>
-
-            {/* Address field (read-only) */}
-            <div className="qt-hbox" style={{ alignItems: 'center', gap: '10px' }}>
-              <label htmlFor="receive-address" className="qt-label" style={{ width: '70px', fontSize: '12px', textAlign: 'right' }}>
-                {t('receive.address')}:
-              </label>
-              <input
-                id="receive-address"
-                type="text"
-                value={currentAddress}
-                readOnly
-                className="qt-input"
-                aria-label="Current receiving address"
-                aria-readonly="true"
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #1a1a1a',
-                  color: '#ddd',
-                  cursor: 'default',
-                }}
-              />
-            </div>
-
-            {/* Amount field with unit selector */}
-            <div className="qt-hbox" style={{ alignItems: 'center', gap: '10px' }}>
-              <label htmlFor="receive-amount" className="qt-label" style={{ width: '70px', fontSize: '12px', textAlign: 'right' }}>
-                {t('receive.amount')}:
-              </label>
-              <input
-                id="receive-amount"
-                type="text"
-                value={formState.amount}
-                onChange={(e) => {
-                  // Only allow numbers and single decimal point
-                  const value = e.target.value;
-                  if (value === '' || /^\d*$/.test(value) || /^\d*\.\d*$/.test(value)) {
-                    updateFormField('amount', value);
-                  }
-                }}
-                className="qt-input"
-                aria-label="Payment request amount"
-                style={{
-                  width: '150px',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #1a1a1a',
-                  color: '#ddd',
-                }}
-                placeholder=""
-              />
-              <select
-                id="receive-unit"
-                value={selectedUnit}
-                onChange={(e) => setSelectedUnit(e.target.value as AmountUnit)}
-                className="qt-select"
-                aria-label="Amount unit"
-                style={{
-                  minWidth: '90px',
-                  padding: '4px 20px 4px 8px',
-                  fontSize: '12px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #1a1a1a',
-                  color: '#ddd',
-                  cursor: 'pointer',
-                }}
-              >
-                {UNIT_OPTIONS.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Message field */}
-            <div className="qt-hbox" style={{ alignItems: 'center', gap: '10px' }}>
-              <label htmlFor="receive-message" className="qt-label" style={{ width: '70px', fontSize: '12px', textAlign: 'right' }}>
-                {t('receive.message')}:
-              </label>
-              <input
-                id="receive-message"
-                type="text"
-                value={formState.message}
-                onChange={(e) => updateFormField('message', e.target.value)}
-                className="qt-input"
-                aria-label="Payment request message"
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #1a1a1a',
-                  color: '#ddd',
-                }}
-                placeholder=""
-              />
-            </div>
-
-            {/* Reuse address checkbox */}
-            <div className="qt-hbox" style={{ alignItems: 'center', gap: '10px', marginLeft: '80px' }}>
-              <label className="qt-hbox" style={{ alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={reuseAddress}
-                  onChange={(e) => setReuseAddress(e.target.checked)}
-                  className="qt-checkbox"
-                  style={{ width: '14px', height: '14px' }}
+          {/* LEFT COLUMN — QR Code Hero */}
+          {/*
+            minWidth: 0 + maxWidth: 340px pin the column at exactly its
+            flex-basis (340px) regardless of inner content. Without these,
+            `min-width: auto` on the flex item lets the URI row's intrinsic
+            content width override the basis, causing the entire column to
+            grow when the URI gets long. With the column pinned, the URI
+            text inside the URI row truncates correctly via its existing
+            overflow/textOverflow/whiteSpace styles.
+          */}
+          <div style={{
+            flex: '0 0 340px',
+            minWidth: 0,
+            maxWidth: '340px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '24px 20px',
+            backgroundColor: '#2f2f2f',
+            borderRadius: '8px',
+            border: '1px solid #3a3a3a',
+          }}>
+            {/* QR Code */}
+            <div
+              ref={qrRef}
+              style={{
+                padding: '12px',
+                backgroundColor: '#ffffff',
+                borderRadius: '8px',
+                lineHeight: 0,
+                cursor: 'pointer',
+              }}
+              onClick={handleSaveQR}
+              title={t('receive.clickToSaveQR')}
+            >
+              {currentAddress ? (
+                <QRCodeCanvas
+                  value={liveURI || `twins:${currentAddress}`}
+                  size={200}
+                  level="L"
+                  includeMargin={false}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
                 />
-                <span className="qt-label" style={{ fontSize: '12px' }}>
-                  {t('receive.reusePrevious')}
-                </span>
-              </label>
+              ) : (
+                <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '12px' }}>
+                  {t('common:status.loading')}
+                </div>
+              )}
             </div>
 
-            {/* Error display */}
-            {error && (
+            {/* Action pills (Save image + New address) — discoverable affordances under the QR */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <PillButton
+                onClick={handleSaveQR}
+                disabled={!currentAddress || isGeneratingAddress}
+                title={t('receive.saveImage')}
+                ariaLabel={t('receive.saveImage')}
+                icon={<Download size={12} />}
+                label={t('receive.saveImage')}
+              />
+              <PillButton
+                onClick={handleNewAddress}
+                disabled={isGeneratingAddress || isLoading}
+                title={t('receive.newAddress')}
+                ariaLabel={t('receive.newAddress')}
+                icon={<RefreshCw size={12} style={isGeneratingAddress ? { animation: 'spin 1s linear infinite' } : undefined} />}
+                label={t('receive.newAddress')}
+                cursor={isGeneratingAddress ? 'wait' : undefined}
+              />
+            </div>
+
+            {/* URI too long warning */}
+            {isURITooLong && (
               <div style={{
-                marginLeft: '80px',
-                padding: '6px 10px',
-                backgroundColor: '#4a2a2a',
-                border: '1px solid #ff6666',
-                borderRadius: '2px',
-                color: '#ff6666',
-                fontSize: '11px',
+                marginTop: '12px',
+                padding: '4px 10px',
+                backgroundColor: '#4a3a2a',
+                border: '1px solid #ff9966',
+                borderRadius: '4px',
+                color: '#ff9966',
+                fontSize: '10px',
+                textAlign: 'center',
               }}>
-                {sanitizeText(error)}
+                {t('receive.uriTooLong')}
               </div>
             )}
 
-            {/* Action buttons */}
-            <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-              <div className="qt-hbox" style={{ gap: '8px', marginLeft: '80px' }}>
+            {/* Address row with inline copy icon */}
+            <div style={{
+              marginTop: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              backgroundColor: '#252525',
+              border: '1px solid #3a3a3a',
+              borderRadius: '6px',
+              width: '100%',
+            }}>
+              <span
+                title={currentAddress}
+                style={{
+                  flex: 1,
+                  fontFamily: 'monospace',
+                  fontSize: '13px',
+                  color: '#e0e0e0',
+                  letterSpacing: '0.3px',
+                  textAlign: 'center',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                }}
+              >
+                {currentAddress ? truncateAddress(currentAddress, 12, 10) : '...'}
+              </span>
+              <CopyIconButton
+                onClick={handleCopyAddress}
+                disabled={!currentAddress}
+                title={t('receive.copyAddress')}
+                ariaLabel={t('receive.copyAddress')}
+              />
+            </div>
+
+            {/* URI row with inline copy icon — always visible */}
+            <div style={{
+              marginTop: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              backgroundColor: '#252525',
+              border: '1px solid #3a3a3a',
+              borderRadius: '6px',
+              width: '100%',
+            }}>
+              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>
+                {t('receive.uri')}
+              </span>
+              <span
+                title={liveURI || (currentAddress ? `twins:${currentAddress}` : '')}
+                style={{
+                  flex: 1,
+                  fontSize: '11px',
+                  color: '#6699cc',
+                  fontFamily: 'monospace',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                }}
+              >
+                {liveURI || (currentAddress ? `twins:${currentAddress}` : '...')}
+              </span>
+              <CopyIconButton
+                onClick={handleCopyURI}
+                disabled={!liveURI && !currentAddress}
+                title={t('receive.copyUri')}
+                ariaLabel={t('receive.copyUri')}
+              />
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN — Request Payment Form */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '20px',
+            backgroundColor: '#2f2f2f',
+            borderRadius: '8px',
+            border: '1px solid #3a3a3a',
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#ccc', marginBottom: '4px' }}>
+              {t('receive.requestPaymentTitle')}
+            </div>
+            <div style={{ fontSize: '11px', color: '#777', marginBottom: '16px' }}>
+              {t('receive.requestPaymentSubtitle')}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+              {/* Label */}
+              <div>
+                <label htmlFor="receive-label" style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
+                  {t('receive.label')}
+                </label>
+                <input
+                  id="receive-label"
+                  type="text"
+                  value={formState.label}
+                  onChange={(e) => updateFormField('label', e.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={t('receive.labelPlaceholder')}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#252525',
+                    border: '1px solid #3a3a3a',
+                    borderRadius: '4px',
+                    color: '#ddd',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* Amount + unit */}
+              <div>
+                <label htmlFor="receive-amount" style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
+                  {t('receive.amount')}
+                </label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    id="receive-amount"
+                    type="text"
+                    value={formState.amount}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d*$/.test(value) || /^\d*\.\d*$/.test(value)) {
+                        updateFormField('amount', value);
+                      }
+                    }}
+                    placeholder="0.00"
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      fontSize: '12px',
+                      backgroundColor: '#252525',
+                      border: '1px solid #3a3a3a',
+                      borderRadius: '4px',
+                      color: '#ddd',
+                      outline: 'none',
+                    }}
+                  />
+                  <select
+                    id="receive-unit"
+                    value={selectedUnit}
+                    onChange={(e) => setSelectedUnit(e.target.value as AmountUnit)}
+                    style={{
+                      minWidth: '85px',
+                      padding: '7px 24px 7px 10px',
+                      fontSize: '12px',
+                      backgroundColor: '#252525',
+                      border: '1px solid #3a3a3a',
+                      borderRadius: '4px',
+                      color: '#ddd',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {UNIT_OPTIONS.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Message */}
+              <div>
+                <label htmlFor="receive-message" style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
+                  {t('receive.message')}
+                </label>
+                <input
+                  id="receive-message"
+                  type="text"
+                  value={formState.message}
+                  onChange={(e) => updateFormField('message', e.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={t('receive.messagePlaceholder')}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#252525',
+                    border: '1px solid #3a3a3a',
+                    borderRadius: '4px',
+                    color: '#ddd',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* New address per request checkbox */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                color: '#888',
+                marginTop: '2px',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={!reuseAddress}
+                  onChange={(e) => setReuseAddress(!e.target.checked)}
+                  className="qt-checkbox"
+                  style={{ width: '13px', height: '13px' }}
+                />
+                {t('receive.newAddressPerRequest')}
+              </label>
+
+              {/* Error display */}
+              {error && (
+                <div style={{
+                  padding: '6px 10px',
+                  backgroundColor: '#4a2a2a',
+                  border: '1px solid #ff6666',
+                  borderRadius: '4px',
+                  color: '#ff6666',
+                  fontSize: '11px',
+                }}>
+                  {sanitizeText(error)}
+                </div>
+              )}
+
+              {/* Spacer */}
+              <div style={{ flex: 1 }} />
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button
                   type="button"
-                  onClick={handleRequestPayment}
+                  onClick={handleCreateRequest}
                   disabled={isCreatingRequest || isLoading}
-                  className="qt-button-primary"
                   style={{
-                    padding: '6px 16px',
+                    flex: 1,
+                    padding: '8px 16px',
                     fontSize: '12px',
+                    fontWeight: 500,
                     backgroundColor: '#4a7c59',
                     border: '1px solid #5a8c69',
-                    borderRadius: '3px',
+                    borderRadius: '6px',
                     color: '#fff',
                     cursor: isCreatingRequest ? 'wait' : 'pointer',
                     opacity: isCreatingRequest ? 0.7 : 1,
+                    transition: 'background-color 0.15s',
                   }}
                 >
-                  {isCreatingRequest ? t('receive.requestingPayment') : t('receive.requestPayment')}
+                  {isCreatingRequest ? t('receive.requestingPayment') : t('receive.createRequest')}
                 </button>
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="qt-button"
                   style={{
-                    padding: '6px 16px',
+                    padding: '8px 16px',
                     fontSize: '12px',
-                    backgroundColor: '#404040',
-                    border: '1px solid #555',
-                    borderRadius: '3px',
-                    color: '#ddd',
+                    backgroundColor: '#383838',
+                    border: '1px solid #4a4a4a',
+                    borderRadius: '6px',
+                    color: '#ccc',
                     cursor: 'pointer',
+                    transition: 'background-color 0.15s',
                   }}
                 >
                   {t('receive.clear')}
                 </button>
               </div>
 
+              {/* Receiving addresses link */}
               <button
                 type="button"
                 onClick={openAddressesDialog}
-                className="qt-button"
                 style={{
-                  padding: '6px 16px',
-                  fontSize: '12px',
-                  backgroundColor: '#4a7c59',
-                  border: '1px solid #5a8c69',
-                  borderRadius: '3px',
-                  color: '#fff',
+                  background: 'none',
+                  border: 'none',
+                  color: '#6699cc',
+                  fontSize: '11px',
                   cursor: 'pointer',
+                  padding: '0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  alignSelf: 'flex-start',
                 }}
               >
+                <ExternalLink size={11} />
                 {t('receive.receivingAddresses')}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Requested Payments History Section */}
-        <div className="qt-frame-secondary" style={{
+        {/* BOTTOM — Recent Requests History */}
+        <div style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          padding: '10px',
-          border: '1px solid #4a4a4a',
-          borderRadius: '2px',
-          backgroundColor: '#3a3a3a',
           minHeight: 0,
-          overflow: 'hidden',
+          backgroundColor: '#2f2f2f',
+          borderRadius: '8px',
+          border: '1px solid #3a3a3a',
+          padding: '12px 16px',
         }}>
-          <div className="qt-label" style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '12px' }}>
-            {t('receive.requestedHistory')}
+          {/* Header with sort options */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexShrink: 0 }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#aaa' }}>
+              {t('receive.recentRequests')} ({paymentRequests.length})
+            </span>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#666' }}>
+              <button
+                onClick={() => handleSort('date')}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: sortColumn === 'date' ? '#aaa' : '#666', fontSize: '11px', padding: 0,
+                }}
+              >
+                {t('receive.table.date')}{renderSortIndicator('date')}
+              </button>
+              <button
+                onClick={() => handleSort('label')}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: sortColumn === 'label' ? '#aaa' : '#666', fontSize: '11px', padding: 0,
+                }}
+              >
+                {t('receive.table.label')}{renderSortIndicator('label')}
+              </button>
+              <button
+                onClick={() => handleSort('amount')}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: sortColumn === 'amount' ? '#aaa' : '#666', fontSize: '11px', padding: 0,
+                }}
+              >
+                {t('receive.table.amount')}{renderSortIndicator('amount')}
+              </button>
+            </div>
           </div>
 
-          {/* Table container */}
-          <div
-            className="history-scroll-container"
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflow: 'auto',
-              border: '1px solid #2b2b2b',
-              borderRadius: '2px',
-              backgroundColor: '#2b2b2b',
-            }}
-          >
-            <table className="history-table">
-              <thead>
-                <tr>
-                  <th onClick={() => handleSort('date')} style={{ width: '140px' }}>
-                    {t('receive.table.date')} {renderSortIndicator('date')}
-                  </th>
-                  <th onClick={() => handleSort('label')} style={{ width: '120px' }}>
-                    {t('receive.table.label')} {renderSortIndicator('label')}
-                  </th>
-                  <th onClick={() => handleSort('address')} style={{ width: '150px' }}>
-                    {t('receive.table.address')} {renderSortIndicator('address')}
-                  </th>
-                  <th onClick={() => handleSort('message')}>
-                    {t('receive.table.message')} {renderSortIndicator('message')}
-                  </th>
-                  <th onClick={() => handleSort('amount')} style={{ width: '120px', textAlign: 'right' }}>
-                    {t('receive.table.amountTwins')} {renderSortIndicator('amount')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>
-                      {isLoading ? t('common:status.loading') : t('receive.noRequests')}
-                    </td>
-                  </tr>
-                ) : (
-                  sortedRequests.map((request, index) => {
-                    const rowKey = getRequestKey(request);
-                    return (
-                    <tr
+          {/* Scrollable card list */}
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
+            {sortedRequests.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#555', padding: '24px', fontSize: '12px' }}>
+                {isLoading ? t('common:status.loading') : t('receive.noRequests')}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {sortedRequests.map((request) => {
+                  const rowKey = getRequestKey(request);
+                  return (
+                    <div
                       key={rowKey}
-                      className={selectedRowKey === rowKey ? 'selected' : ''}
-                      tabIndex={0}
-                      role="row"
-                      aria-selected={selectedRowKey === rowKey}
-                      onClick={() => handleRowClick(rowKey)}
-                      onDoubleClick={() => handleRowDoubleClick(rowKey)}
-                      onContextMenu={(e) => handleContextMenu(e, rowKey)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (e.shiftKey) {
-                            handleRowDoubleClick(rowKey);
-                          } else {
-                            handleRowClick(rowKey);
-                          }
-                        } else if (e.key === ' ') {
-                          e.preventDefault();
-                          handleRowClick(rowKey);
-                        } else if (e.key === 'ArrowDown' && index < sortedRequests.length - 1) {
-                          e.preventDefault();
-                          const nextRow = e.currentTarget.nextElementSibling as HTMLElement;
-                          nextRow?.focus();
-                        } else if (e.key === 'ArrowUp' && index > 0) {
-                          e.preventDefault();
-                          const prevRow = e.currentTarget.previousElementSibling as HTMLElement;
-                          prevRow?.focus();
-                        }
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '8px 12px',
+                        backgroundColor: '#2a2a2a',
+                        borderRadius: '6px',
+                        border: '1px solid transparent',
+                        cursor: 'default',
+                        transition: 'border-color 0.15s',
                       }}
-                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = '#444'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent'; }}
                     >
-                      <td>{formatDate(request.date)}</td>
-                      <td title={sanitizeText(request.label || '')}>{sanitizeText(request.label || '')}</td>
-                      <td title={sanitizeText(request.address)}>{sanitizeText(request.address)}</td>
-                      <td title={sanitizeText(request.message || '')}>{sanitizeText(request.message || '')}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {request.amount ? request.amount.toFixed(8) : '-'}
-                      </td>
-                    </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                      {/* Date */}
+                      <span style={{ fontSize: '11px', color: '#666', minWidth: '50px', flexShrink: 0 }}>
+                        {formatDate(request.date)}
+                      </span>
 
-          {/* Table action buttons */}
-          <div className="qt-hbox" style={{ gap: '8px', marginTop: '8px' }}>
-            <button
-              type="button"
-              onClick={handleShow}
-              disabled={selectedRowKey === null}
-              className="qt-button"
-              style={{
-                padding: '4px 12px',
-                fontSize: '11px',
-                backgroundColor: '#404040',
-                border: '1px solid #555',
-                borderRadius: '3px',
-                color: '#ddd',
-                cursor: selectedRowKey === null ? 'not-allowed' : 'pointer',
-                opacity: selectedRowKey === null ? 0.5 : 1,
-              }}
-            >
-              {t('receive.show')}
-            </button>
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={selectedRowKey === null}
-              className="qt-button"
-              style={{
-                padding: '4px 12px',
-                fontSize: '11px',
-                backgroundColor: '#404040',
-                border: '1px solid #555',
-                borderRadius: '3px',
-                color: '#ddd',
-                cursor: selectedRowKey === null ? 'not-allowed' : 'pointer',
-                opacity: selectedRowKey === null ? 0.5 : 1,
-              }}
-            >
-              {t('receive.remove')}
-            </button>
+                      {/* Label + message */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '12px', color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {sanitizeText(request.label || t('receive.noLabel'))}
+                        </div>
+                        {request.message && (
+                          <div style={{ fontSize: '10px', color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '1px' }}>
+                            {sanitizeText(request.message)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Amount */}
+                      <span style={{ fontSize: '12px', color: '#4a7c59', fontWeight: 500, flexShrink: 0, minWidth: '80px', textAlign: 'right' }}>
+                        {request.amount ? formatAmount(request.amount, true) : '-'}
+                      </span>
+
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleViewRequest(rowKey)}
+                          title={t('receive.show')}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: '26px', height: '26px',
+                            background: 'none', border: '1px solid #3a3a3a', borderRadius: '4px',
+                            color: '#888', cursor: 'pointer', transition: 'color 0.15s, border-color 0.15s',
+                          }}
+                          onMouseEnter={(e) => { const el = e.currentTarget; el.style.color = '#ddd'; el.style.borderColor = '#555'; }}
+                          onMouseLeave={(e) => { const el = e.currentTarget; el.style.color = '#888'; el.style.borderColor = '#3a3a3a'; }}
+                        >
+                          <Eye size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveClick(rowKey)}
+                          title={t('receive.remove')}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: '26px', height: '26px',
+                            background: 'none', border: '1px solid #3a3a3a', borderRadius: '4px',
+                            color: '#888', cursor: 'pointer', transition: 'color 0.15s, border-color 0.15s',
+                          }}
+                          onMouseEnter={(e) => { const el = e.currentTarget; el.style.color = '#ff6666'; el.style.borderColor = '#555'; }}
+                          onMouseLeave={(e) => { const el = e.currentTarget; el.style.color = '#888'; el.style.borderColor = '#3a3a3a'; }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -717,83 +757,139 @@ export const Receive: React.FC = () => {
         onClose={closeAddressesDialog}
       />
 
-      {/* Request Payment Dialog */}
+      {/* Request Payment Dialog (for viewing saved requests) */}
       <RequestPaymentDialog />
 
-      {/* Context Menu */}
-      {contextMenu.visible && (
+      {/* Remove Confirmation Dialog */}
+      <SimpleConfirmDialog
+        isOpen={confirmRemoveKey !== null}
+        title={t('receive.removeConfirmTitle')}
+        message={t('receive.removeConfirmMessage')}
+        confirmText={t('receive.remove')}
+        onConfirm={handleConfirmRemove}
+        onCancel={() => setConfirmRemoveKey(null)}
+        isDestructive
+      />
+
+      {/* Copy Feedback Toast */}
+      {copyFeedback && (
         <div
-          ref={contextMenuRef}
-          className="context-menu"
-          role="menu"
-          aria-label="Payment request actions"
+          role="status"
+          aria-live="polite"
           style={{
-            left: contextMenu.x,
-            top: contextMenu.y,
+            position: 'fixed',
+            bottom: '36px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#333',
+            color: '#ddd',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            fontSize: '12px',
+            zIndex: 50,
+            border: '1px solid #555',
           }}
         >
-          <div
-            className="context-menu-item"
-            role="menuitem"
-            tabIndex={0}
-            onClick={handleCopyLabel}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleCopyLabel();
-              }
-            }}
-          >
-            <Copy size={14} />
-            {t('receive.contextMenu.copyLabel')}
-          </div>
-          <div
-            className="context-menu-item"
-            role="menuitem"
-            tabIndex={0}
-            onClick={handleCopyAddress}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleCopyAddress();
-              }
-            }}
-          >
-            <Clipboard size={14} />
-            {t('receive.contextMenu.copyAddress')}
-          </div>
-          <div
-            className="context-menu-item"
-            role="menuitem"
-            tabIndex={0}
-            onClick={handleCopyMessage}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleCopyMessage();
-              }
-            }}
-          >
-            <Copy size={14} />
-            {t('receive.contextMenu.copyMessage')}
-          </div>
-          <div
-            className="context-menu-item"
-            role="menuitem"
-            tabIndex={0}
-            onClick={handleCopyAmount}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleCopyAmount();
-              }
-            }}
-          >
-            <Copy size={14} />
-            {t('receive.contextMenu.copyAmount')}
-          </div>
+          {copyFeedback}
         </div>
       )}
+
     </div>
   );
 };
+
+// Reusable inline copy icon button — matches the CopyIconButton pattern from
+// RequestPaymentDialog.tsx so the Receive page and Payment Request dialog
+// share the same affordance for copy actions.
+const CopyIconButton: React.FC<{
+  onClick: () => void;
+  title: string;
+  ariaLabel: string;
+  disabled?: boolean;
+}> = ({ onClick, title, ariaLabel, disabled }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    aria-label={ariaLabel}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '24px',
+      height: '24px',
+      background: 'none',
+      border: '1px solid #3a3a3a',
+      borderRadius: '4px',
+      color: '#888',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      flexShrink: 0,
+      opacity: disabled ? 0.5 : 1,
+      transition: 'color 0.15s, border-color 0.15s',
+    }}
+    onMouseEnter={(e) => {
+      if (disabled) return;
+      e.currentTarget.style.color = '#ddd';
+      e.currentTarget.style.borderColor = '#555';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.color = '#888';
+      e.currentTarget.style.borderColor = '#3a3a3a';
+    }}
+  >
+    <Copy size={12} />
+  </button>
+);
+
+// Reusable outline pill button — used for the Save image and New address
+// affordances rendered below the QR code. Matches the visual style of the
+// "Save image" pill in RequestPaymentDialog.tsx.
+const PillButton: React.FC<{
+  onClick: () => void;
+  title: string;
+  ariaLabel: string;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+  cursor?: React.CSSProperties['cursor'];
+}> = ({ onClick, title, ariaLabel, icon, label, disabled, cursor }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    aria-label={ariaLabel}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+      padding: '6px 14px',
+      fontSize: '11px',
+      fontWeight: 500,
+      backgroundColor: 'transparent',
+      border: '1px solid #4a4a4a',
+      borderRadius: '999px',
+      color: '#ccc',
+      cursor: disabled ? 'not-allowed' : (cursor ?? 'pointer'),
+      opacity: disabled ? 0.5 : 1,
+      transition: 'background-color 0.15s, border-color 0.15s, color 0.15s',
+    }}
+    onMouseEnter={(e) => {
+      if (disabled) return;
+      e.currentTarget.style.backgroundColor = '#383838';
+      e.currentTarget.style.borderColor = '#5a5a5a';
+      e.currentTarget.style.color = '#fff';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.backgroundColor = 'transparent';
+      e.currentTarget.style.borderColor = '#4a4a4a';
+      e.currentTarget.style.color = '#ccc';
+    }}
+  >
+    {icon}
+    {label}
+  </button>
+);

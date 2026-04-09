@@ -24,6 +24,15 @@ type TransactionData struct {
 	TxData    *types.Transaction
 }
 
+// SpenderInfo identifies the transaction that spent a given outpoint.
+// Returned by FindAndMarkSpendersForOutpoints so callers can update their
+// in-memory state (e.g. wallet dropping the UTXO from w.utxos) without
+// re-reading storage.
+type SpenderInfo struct {
+	SpenderTxHash types.Hash
+	SpenderHeight uint32
+}
+
 // Storage defines the main interface for blockchain data storage
 type Storage interface {
 	// Block operations
@@ -109,6 +118,34 @@ type Storage interface {
 	// entry is only deleted if it points to the orphaned block (not the correct block
 	// at that height). Returns the number of orphaned entries removed.
 	CleanOrphanedBlocks(maxValidHeight uint32) (int, error)
+
+	// UnspendUTXOsBySpendingTx iterates the UTXO set and resets the spending
+	// reference (SpendingHeight and SpendingTxHash) on any UTXO whose
+	// SpendingTxHash is present in txHashes. Affected UTXOs are re-added to the
+	// address UTXO index so balance queries reflect them again. Returns the
+	// number of UTXOs unspent. Used to reconcile stuck-spent UTXOs whose
+	// spending transaction no longer exists in storage (stale references after
+	// incomplete orphan cleanup or corrupt block recovery).
+	UnspendUTXOsBySpendingTx(txHashes map[types.Hash]struct{}) (int, error)
+
+	// FindAndMarkSpendersForOutpoints performs a full PrefixTransaction scan
+	// searching for transactions whose inputs consume any of the given
+	// outpoints. For every match, validates the spender transaction is on
+	// the active main chain, confirms the UTXO is still unspent, and marks
+	// it as spent via a batched write (reducing the address UTXO index
+	// entry and updating SpendingHeight/SpendingTxHash). Returns a map of
+	// outpoint → spender info so callers can update their in-memory state
+	// (e.g. wallet dropping the UTXO from w.utxos).
+	//
+	// This is the recovery path for "phantom-unspent" UTXOs whose spending
+	// transaction was persisted in storage but whose mark-spent AND
+	// address-index input-side writes were skipped by an interrupted batch
+	// commit. When both index writes are missing, address-history-based
+	// reconciliation cannot find the spender, and a full transaction scan
+	// is the only way to recover. Used as the final sweep of
+	// RescanAllAddresses; expensive (O(all transactions in storage)) so
+	// callers should invoke it at most once per startup.
+	FindAndMarkSpendersForOutpoints(outpoints map[types.Outpoint]struct{}) (map[types.Outpoint]SpenderInfo, error)
 
 	// Maintenance operations
 	Compact() error
@@ -398,10 +435,17 @@ func ValidateStorageConfig(config *StorageConfig) error {
 	return nil
 }
 
-// IsNotFoundError checks if an error is a "not found" error
+// IsNotFoundError checks if an error is a "not found" error. Matches the
+// generic NOT_FOUND code as well as domain-specific variants (e.g.
+// TX_NOT_FOUND returned by transaction lookups, HEIGHT_NOT_FOUND returned
+// by height lookups) so callers can uniformly distinguish missing records
+// from transient I/O errors.
 func IsNotFoundError(err error) bool {
 	if storageErr, ok := err.(*StorageError); ok {
-		return storageErr.Code == "NOT_FOUND"
+		switch storageErr.Code {
+		case "NOT_FOUND", "TX_NOT_FOUND", "HEIGHT_NOT_FOUND":
+			return true
+		}
 	}
 	return false
 }

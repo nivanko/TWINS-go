@@ -119,12 +119,6 @@
     "noRequests": "Mokėjimo prašymų dar nėra",
     "show": "Rodyti",
     "remove": "Pašalinti",
-    "contextMenu": {
-      "copyLabel": "Kopijuoti etiketę",
-      "copyAddress": "Kopijuoti adresą",
-      "copyMessage": "Kopijuoti žinutę",
-      "copyAmount": "Kopijuoti sumą"
-    },
     "table": {
       "date": "Data",
       "label": "Etiketė",

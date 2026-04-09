@@ -196,8 +196,6 @@ func (s *SettingsService) GetBool(key string) bool {
 		return s.settings.HideTrayIcon
 	case "fShowMasternodesTab":
 		return s.settings.ShowMasternodesTab
-	case "fAutoCombineRewards":
-		return s.settings.AutoCombineRewards
 	case "fCoinControlFeatures":
 		return s.settings.CoinControlFeatures
 	case "fHideOrphans":
@@ -332,8 +330,6 @@ func (s *SettingsService) SetBool(key string, value bool) error {
 		s.settings.HideTrayIcon = value
 	case "fShowMasternodesTab":
 		s.settings.ShowMasternodesTab = value
-	case "fAutoCombineRewards":
-		s.settings.AutoCombineRewards = value
 	case "fCoinControlFeatures":
 		s.settings.CoinControlFeatures = value
 	case "fHideOrphans":
@@ -476,7 +472,7 @@ func (s *SettingsService) HasKey(key string) bool {
 	knownKeys := []string{
 		"fMinimizeToTray", "fMinimizeOnClose", "nDisplayUnit", "theme", "digits",
 		"language", "fHideTrayIcon", "fShowMasternodesTab", "strThirdPartyTxUrls",
-		"nStakeSplitThreshold", "fAutoCombineRewards",
+		"nStakeSplitThreshold",
 		"fCoinControlFeatures", "nCoinControlMode", "nCoinControlSortColumn", "nCoinControlSortOrder",
 		"transactionDate", "transactionType", "transactionMinAmount", "fHideOrphans", "fHideZeroBalances",
 		"fFeeSectionMinimized", "nFeeRadio", "nCustomFeeRadio", "nSmartFeeSliderPosition",

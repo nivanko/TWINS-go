@@ -39,6 +39,9 @@ type Server struct {
 	connLimiter *ConnectionLimiter
 	rateLimiter *RateLimiter
 
+	// Configuration persistence (optional, set by daemon for RPC→twinsd.yml persistence)
+	configSetter ConfigSetter
+
 	// Synchronization
 	mu           sync.RWMutex
 	shutdown     chan struct{}
@@ -111,6 +114,11 @@ func (s *Server) SetChainParams(params *types.ChainParams) {
 // SetWallet sets the wallet interface
 func (s *Server) SetWallet(w WalletInterface) {
 	s.wallet = w
+}
+
+// SetConfigSetter sets the config persistence interface for RPC→twinsd.yml writes
+func (s *Server) SetConfigSetter(cs ConfigSetter) {
+	s.configSetter = cs
 }
 
 // SetMasternode sets the masternode interface

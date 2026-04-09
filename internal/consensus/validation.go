@@ -1278,21 +1278,27 @@ func (bv *BlockValidator) validateMinStakeOutput(block *types.Block, height uint
 	const minStakeHeightMainnet = uint32(333500)
 	const minStakeHeightTestnet = uint32(192500)
 
-	// LEGACY COMPLIANCE: Only validate if spork is explicitly active
-	// Legacy C++ checks: IsSporkActive(SPORK_TWINS_02_MIN_STAKE_AMOUNT)
-	// The spork must be active AND height must be past activation for the check to apply.
-	// If spork manager is nil, default to spork NOT active (matches C++ behavior where
-	// IsSporkActive returns false if spork data is unavailable).
-	sporkActive := false
-	if bv.sporkManager != nil {
-		// Check if spork is active
-		// Legacy: IsSporkActive(SPORK_TWINS_02_MIN_STAKE_AMOUNT)
-		sporkActive = bv.sporkManager.IsActive(SPORK_TWINS_02_MIN_STAKE_AMOUNT)
-	}
-	// If spork manager is nil, sporkActive remains false - don't enforce the check
-
-	if !sporkActive {
-		return nil
+	// LEGACY COMPLIANCE: Legacy C++ gates this rule on
+	// IsSporkActive(SPORK_TWINS_02_MIN_STAKE_AMOUNT). On mainnet the spork was
+	// activated via a signed broadcast long ago and every legacy mainnet node
+	// enforces the rule; a fresh Go node may never have received that
+	// broadcast, so the spork stays at its OFF default and the check is
+	// silently skipped -- letting invalid stakes through (see block
+	// fbf23a39... accepted by Go, rejected by legacy).
+	//
+	// Fix: on mainnet, enforce the rule unconditionally past the legacy
+	// height gate. This cannot diverge from legacy mainnet because legacy
+	// mainnet already enforces it. On testnet/regtest we keep the spork gate
+	// because we do not know whether those networks ever activated the
+	// spork; forcing enforcement there could fork testnet.
+	if bv.params.Name != "mainnet" {
+		sporkActive := false
+		if bv.sporkManager != nil {
+			sporkActive = bv.sporkManager.IsActive(SPORK_TWINS_02_MIN_STAKE_AMOUNT)
+		}
+		if !sporkActive {
+			return nil
+		}
 	}
 
 	// Check height threshold based on network

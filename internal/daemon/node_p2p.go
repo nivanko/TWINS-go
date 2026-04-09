@@ -522,6 +522,9 @@ func (n *Node) wireRPCDependencies(rpcServer *rpc.Server, cfg RPCConfig) {
 	if w != nil {
 		rpcServer.SetWallet(rpc.NewWalletAdapter(w))
 	}
+	if n.ConfigManager != nil {
+		rpcServer.SetConfigSetter(n.ConfigManager)
+	}
 	if p2pSrv != nil {
 		rpcServer.SetP2P(p2pSrv)
 	}

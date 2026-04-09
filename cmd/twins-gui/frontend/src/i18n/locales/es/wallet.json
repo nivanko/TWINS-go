@@ -119,12 +119,6 @@
     "noRequests": "Aún no hay solicitudes de pago",
     "show": "Mostrar",
     "remove": "Eliminar",
-    "contextMenu": {
-      "copyLabel": "Copiar etiqueta",
-      "copyAddress": "Copiar dirección",
-      "copyMessage": "Copiar mensaje",
-      "copyAmount": "Copiar cantidad"
-    },
     "table": {
       "date": "Fecha",
       "label": "Etiqueta",

@@ -119,12 +119,6 @@
     "noRequests": "결제 요청이 없습니다",
     "show": "표시",
     "remove": "삭제",
-    "contextMenu": {
-      "copyLabel": "라벨 복사",
-      "copyAddress": "주소 복사",
-      "copyMessage": "메시지 복사",
-      "copyAmount": "금액 복사"
-    },
     "table": {
       "date": "날짜",
       "label": "라벨",

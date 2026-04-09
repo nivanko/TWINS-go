@@ -24,8 +24,6 @@ export const SplashScreenWithEvents: React.FC<SplashScreenWithEventsProps> = ({
 }) => {
   const [statusMessage, setStatusMessage] = useState('Initializing...');
   const [version, setVersion] = useState<string>('');
-  const currentYear = new Date().getFullYear();
-
   // Use refs for callbacks to avoid re-subscribing event listeners when props change.
   // Without refs, the useEffect would depend on [onComplete, onError] and re-run
   // on every parent render, briefly unsubscribing events and losing progress messages.
@@ -94,51 +92,32 @@ export const SplashScreenWithEvents: React.FC<SplashScreenWithEventsProps> = ({
         backgroundRepeat: 'no-repeat',
       }}
     >
-      {/* TWINS Core text and version - positioned at BOTTOM LEFT with Qt typography */}
+      {/* TWINS Core title and version - single centered line */}
       <div
         className="absolute"
         style={{
-          left: '14px',  // paddingLeft from Qt
-          bottom: '70px',  // Positioned at bottom to match screenshot
-          color: '#FFFFFF',  // QColor(255, 255, 255) from Qt
-        }}
-      >
-        <div style={{
-          fontSize: '20px',  // Adjusted for better visual match
+          bottom: '90px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          color: '#FFFFFF',
+          fontSize: '16px',
           fontWeight: '500',
           fontFamily: 'system-ui, -apple-system, sans-serif',
-          marginBottom: '2px',
-        }}>
-          TWINS Core
-        </div>
-        <div style={{
-          fontSize: '14px',  // Adjusted for better visual match
-          color: '#FFFFFF',
-          marginBottom: '8px',
-        }}>
-          Version {version}
-        </div>
-        <div style={{
-          fontSize: '10px',  // From Qt: 10 * fontFactor
-          lineHeight: '12px',
-          color: '#FFFFFF'
-        }}>
-          <div>© 2009-2020 The Bitcoin Core developers</div>
-          <div>© 2014-2020 The Dash Core developers</div>
-          <div>© 2015-2020 The PIVX Core developers</div>
-          <div>© 2018-{currentYear} The TWINS Core developers</div>
-        </div>
+          whiteSpace: 'nowrap',
+        }}
+      >
+        TWINS Core {version && `v${version}`}
       </div>
 
       {/* Status Message - positioned at BOTTOM CENTER */}
       <div
         className="absolute"
         style={{
-          bottom: '40px',  // Positioned well above window border
+          bottom: '45px',
           left: '50%',
           transform: 'translateX(-50%)',
-          color: '#D0D0D0',
-          fontSize: '13px',
+          color: '#999999',
+          fontSize: '12px',
           fontWeight: '400',
           whiteSpace: 'nowrap',
         }}

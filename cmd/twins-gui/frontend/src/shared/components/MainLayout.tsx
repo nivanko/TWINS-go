@@ -12,7 +12,7 @@ import { ChangePassphraseDialog } from '@/features/wallet/components/ChangePassp
 import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
 import { useStore } from '@/store/useStore';
 import { useP2PEvents } from '@/shared/hooks/useP2PEvents';
-import { GetStakingStatus, GetWalletEncryptionStatus, GetTorStatus, LockWallet } from '@wailsjs/go/main/App';
+import { GetStakingStatus, GetWalletEncryptionStatus, GetTorStatus, LockWallet, UpdateSetting } from '@wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '@wailsjs/runtime/runtime';
 import { ToolsTab } from '@/features/tools/constants';
 import '@/styles/qt-theme.css';
@@ -35,6 +35,8 @@ export const MainLayout: React.FC = () => {
   const blockchainInfo = useStore((state) => state.blockchainInfo);
   const openToolsDialog = useStore((state) => state.openToolsDialog);
   const loadDisplayUnits = useStore((state) => state.loadDisplayUnits);
+  const displayUnit = useStore((state) => state.displayUnit);
+  const setDisplayUnit = useStore((state) => state.setDisplayUnit);
 
   // Load display unit settings from backend on mount
   useEffect(() => {
@@ -235,6 +237,18 @@ export const MainLayout: React.FC = () => {
     openToolsDialog(ToolsTab.Peers);
   }, [openToolsDialog]);
 
+  // Handle unit display change - persist to settings and update store
+  const handleUnitChange = useCallback(async (unit: number) => {
+    const prevUnit = displayUnit;
+    setDisplayUnit(unit);
+    try {
+      await UpdateSetting('nDisplayUnit', unit);
+    } catch (error) {
+      console.error('Failed to persist display unit:', error);
+      setDisplayUnit(prevUnit);
+    }
+  }, [setDisplayUnit, displayUnit]);
+
   // Refresh status indicators after dialog success
   const handleDialogSuccess = useCallback(() => {
     // Status will be updated via event listeners
@@ -278,9 +292,11 @@ export const MainLayout: React.FC = () => {
         isStakingOnly={statusIndicators.isStakingOnly}
         isHD={true}
         isTor={statusIndicators.isTor}
+        displayUnit={displayUnit}
         onLockClick={handleLockClick}
         onEncryptClick={handleEncryptClick}
         onPeersClick={handlePeersClick}
+        onUnitChange={handleUnitChange}
       />
       <NotificationContainer />
       <P2PErrorDialog
