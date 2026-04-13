@@ -488,6 +488,36 @@ func (b *BinaryBatch) UnspendUTXO(outpoint types.Outpoint) error {
 	return nil
 }
 
+// DeleteBlockDisconnect deletes block data and both index entries within the batch.
+// Used by disconnectBlock so the entire disconnect (UTXO rollback + tx deletion +
+// block removal + chain state update) is committed atomically.
+func (b *BinaryBatch) DeleteBlockDisconnect(hash types.Hash, height uint32) error {
+	// Delete block data (0x01 + hash)
+	blockKey := BlockKey(hash)
+	if err := b.batch.Delete(blockKey, nil); err != nil {
+		return fmt.Errorf("failed to delete block data: %w", err)
+	}
+	b.size += len(blockKey)
+
+	// Delete hash→height index (0x03 + hash)
+	h2hKey := HashToHeightKey(hash)
+	if err := b.batch.Delete(h2hKey, nil); err != nil {
+		return fmt.Errorf("failed to delete hash→height index: %w", err)
+	}
+	b.size += len(h2hKey)
+
+	// Delete height→hash index (0x02 + height)
+	// Safe to delete unconditionally during disconnect: this block IS the main chain
+	// block at this height, and the new block (if any) will re-write this key on connect.
+	heightKey := HeightToHashKey(height)
+	if err := b.batch.Delete(heightKey, nil); err != nil {
+		return fmt.Errorf("failed to delete height→hash index: %w", err)
+	}
+	b.size += len(heightKey)
+
+	return nil
+}
+
 // SetChainState sets the chain height and tip hash atomically in the batch
 func (b *BinaryBatch) SetChainState(height uint32, hash types.Hash) error {
 	var data [36]byte

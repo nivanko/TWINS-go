@@ -15,7 +15,7 @@ import (
 func (a *App) InitiateShutdown() error {
 	fmt.Println("App: Initiating graceful shutdown...")
 
-	// Transition to small shutdown window
+	// Transition to shutdown window
 	if a.windowManager != nil {
 		if err := a.windowManager.TransitionTo(window.StateShutdown); err != nil {
 			fmt.Printf("App: Failed to transition to shutdown window: %v\n", err)

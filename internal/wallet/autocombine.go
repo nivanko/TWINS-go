@@ -95,6 +95,16 @@ func (acw *AutoCombineWorker) tryConsolidate() {
 		return
 	}
 
+	// Check sync status — only consolidate when fully synced (confidence 100%).
+	// Read callback under RLock, invoke outside lock (callback may acquire its own locks).
+	w.mu.RLock()
+	syncFn := w.syncChecker
+	w.mu.RUnlock()
+	if syncFn != nil && !syncFn() {
+		w.logger.Debug("autocombine: skipping, node not fully synced")
+		return
+	}
+
 	// Check cooldown
 	acw.mu.Lock()
 	cooldown := time.Duration(cooldownSecs) * time.Second

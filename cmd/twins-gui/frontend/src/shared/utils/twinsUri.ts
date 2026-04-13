@@ -23,5 +23,7 @@ export function buildTwinsURI(address: string, amount?: number, label?: string, 
   return uri;
 }
 
-/** Maximum QR code data length before warning (conservative limit for Level L) */
-export const MAX_QR_DATA_LENGTH = 2000;
+/** Maximum QR code data length before warning.
+ *  The QR canvas is 200px with Level H error correction and a 76×76px logo overlay.
+ *  At Level H, modules become too small to scan reliably beyond ~350 characters. */
+export const MAX_QR_DATA_LENGTH = 350;

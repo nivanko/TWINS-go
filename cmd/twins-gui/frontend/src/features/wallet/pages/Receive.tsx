@@ -9,6 +9,8 @@ import { buildTwinsURI, MAX_QR_DATA_LENGTH } from '@/shared/utils/twinsUri';
 import { writeToClipboard } from '@/shared/utils/clipboard';
 import { truncateAddress } from '@/shared/utils/format';
 import { SaveQRImage } from '@wailsjs/go/main/App';
+import { createCircularLogoDataURL } from '@/shared/utils/qrLogo';
+import { buildQRFilename } from '@/shared/utils/qrFilename';
 import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
 import { ReceivingAddressesDialog, RequestPaymentDialog } from '@/components/dialogs';
 
@@ -45,6 +47,8 @@ export const Receive: React.FC = () => {
     closeAddressesDialog,
     openRequestDialog,
     clearError,
+    addressJustSelected,
+    clearAddressJustSelected,
   } = useReceive();
 
   // Local state
@@ -54,7 +58,36 @@ export const Receive: React.FC = () => {
   const [sortColumn, setSortColumn] = useState<'date' | 'label' | 'amount'>('date');
   const [sortAscending, setSortAscending] = useState(false);
 
+  // Brief highlight on the address row after picker selection
+  const [addressHighlight, setAddressHighlight] = useState(false);
+
   const qrRef = useRef<HTMLDivElement>(null);
+  const [qrLogoSrc, setQrLogoSrc] = useState<string | undefined>();
+
+  // Show toast + highlight when an address is picked from the dialog.
+  // Split into two effects: one to consume the flag, one to manage the
+  // highlight timer. Combining them caused clearAddressJustSelected() to
+  // change the dependency, triggering cleanup which cancelled the timer.
+  useEffect(() => {
+    if (!addressJustSelected) return;
+    setCopyFeedback(t('receive.addressSelectedFeedback'));
+    setAddressHighlight(true);
+    clearAddressJustSelected();
+  }, [addressJustSelected, clearAddressJustSelected, t]);
+
+  // Auto-clear address highlight after 1.5s
+  useEffect(() => {
+    if (!addressHighlight) return;
+    const timer = setTimeout(() => setAddressHighlight(false), 1500);
+    return () => clearTimeout(timer);
+  }, [addressHighlight]);
+
+  // Generate circular-bordered logo for QR code
+  useEffect(() => {
+    createCircularLogoDataURL('/icons/twins-logo.png', 64, 4, '#27ae60')
+      .then(setQrLogoSrc)
+      .catch(() => {}); // Falls back to no logo if image fails to load
+  }, []);
 
   // Fetch data on mount only
   useEffect(() => {
@@ -70,27 +103,28 @@ export const Receive: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [copyFeedback]);
 
+  // Converted amount in TWINS — shared by liveURI and handleSaveQR
+  const convertedAmount = useMemo((): number | undefined => {
+    if (!formState.amount) return undefined;
+    const parsed = parseFloat(formState.amount);
+    if (isNaN(parsed) || parsed <= 0) return undefined;
+    switch (selectedUnit) {
+      case 'mTWINS': return parsed / 1000;
+      case 'uTWINS': return parsed / 1000000;
+      default: return parsed;
+    }
+  }, [formState.amount, selectedUnit]);
+
   // Live QR code URI — updates as form fields change
   const liveURI = useMemo(() => {
     if (!currentAddress) return '';
-    let amount: number | undefined;
-    if (formState.amount) {
-      const parsed = parseFloat(formState.amount);
-      if (!isNaN(parsed) && parsed > 0) {
-        switch (selectedUnit) {
-          case 'mTWINS': amount = parsed / 1000; break;
-          case 'uTWINS': amount = parsed / 1000000; break;
-          default: amount = parsed;
-        }
-      }
-    }
     return buildTwinsURI(
       currentAddress,
-      amount,
+      convertedAmount,
       formState.label || undefined,
       formState.message || undefined,
     );
-  }, [currentAddress, formState.amount, formState.label, formState.message, selectedUnit]);
+  }, [currentAddress, convertedAmount, formState.label, formState.message]);
 
   const isURITooLong = liveURI.length > MAX_QR_DATA_LENGTH;
 
@@ -207,7 +241,7 @@ export const Receive: React.FC = () => {
       const canvas = qrRef.current.querySelector('canvas');
       if (!canvas) throw new Error('canvas not found');
       const pngBase64 = canvas.toDataURL('image/png');
-      const defaultFilename = `twins-${currentAddress?.slice(0, 8) || 'qr'}.png`;
+      const defaultFilename = buildQRFilename(currentAddress, formState.label, convertedAmount);
       const saved = await SaveQRImage(pngBase64, defaultFilename);
       if (saved) {
         setCopyFeedback(t('receive.qrSaved'));
@@ -216,7 +250,7 @@ export const Receive: React.FC = () => {
     } catch {
       setCopyFeedback(t('receive.copyFailed'));
     }
-  }, [currentAddress, t]);
+  }, [currentAddress, formState.label, convertedAmount, t]);
 
   return (
     <div className="qt-frame" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -264,10 +298,16 @@ export const Receive: React.FC = () => {
                 <QRCodeCanvas
                   value={liveURI || `twins:${currentAddress}`}
                   size={200}
-                  level="L"
+                  level="H"
                   includeMargin={false}
                   bgColor="#ffffff"
                   fgColor="#000000"
+                  imageSettings={qrLogoSrc ? {
+                    src: qrLogoSrc,
+                    height: 76,
+                    width: 76,
+                    excavate: true,
+                  } : undefined}
                 />
               ) : (
                 <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '12px' }}>
@@ -321,9 +361,10 @@ export const Receive: React.FC = () => {
               gap: '8px',
               padding: '8px 12px',
               backgroundColor: '#252525',
-              border: '1px solid #3a3a3a',
+              border: addressHighlight ? '1px solid #27ae60' : '1px solid #3a3a3a',
               borderRadius: '6px',
               width: '100%',
+              transition: 'border-color 0.3s ease-in-out',
             }}>
               <span
                 title={currentAddress}
@@ -417,6 +458,7 @@ export const Receive: React.FC = () => {
                   type="text"
                   value={formState.label}
                   onChange={(e) => updateFormField('label', e.target.value)}
+                  maxLength={100}
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -495,6 +537,7 @@ export const Receive: React.FC = () => {
                   type="text"
                   value={formState.message}
                   onChange={(e) => updateFormField('message', e.target.value)}
+                  maxLength={120}
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}

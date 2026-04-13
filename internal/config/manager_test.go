@@ -424,6 +424,37 @@ func TestGetAllMetadata(t *testing.T) {
 	}
 }
 
+func TestGetAllMetadataRegistrationOrder(t *testing.T) {
+	cm := NewConfigManager("/tmp/test.yml", nil)
+	meta := cm.GetAllMetadata()
+
+	// Extract RPC settings in order
+	var rpcKeys []string
+	for _, m := range meta {
+		if m.Category == "rpc" {
+			rpcKeys = append(rpcKeys, m.Key)
+		}
+	}
+
+	// Verify rpc.username appears before rpc.password (registration order)
+	usernameIdx, passwordIdx := -1, -1
+	for i, key := range rpcKeys {
+		if key == "rpc.username" {
+			usernameIdx = i
+		}
+		if key == "rpc.password" {
+			passwordIdx = i
+		}
+	}
+	if usernameIdx == -1 || passwordIdx == -1 {
+		t.Fatalf("rpc.username or rpc.password not found in metadata; rpcKeys=%v", rpcKeys)
+	}
+	if usernameIdx >= passwordIdx {
+		t.Errorf("rpc.username (index %d) should appear before rpc.password (index %d); got order: %v",
+			usernameIdx, passwordIdx, rpcKeys)
+	}
+}
+
 func TestGetAllMetadataJSON(t *testing.T) {
 	cm := NewConfigManager("/tmp/test.yml", nil)
 
@@ -466,6 +497,39 @@ func TestGetAllValues(t *testing.T) {
 	}
 	if m["locked"] != false {
 		t.Errorf("expected staking.enabled locked=false, got %v", m["locked"])
+	}
+}
+
+func TestGetAllValuesSensitiveFieldsUnmasked(t *testing.T) {
+	cm := NewConfigManager("/tmp/test.yml", nil)
+
+	// Set sensitive fields to known values via SetFromCLI (bypasses persistence)
+	sensitiveFields := map[string]string{
+		"rpc.username":          "testuser",
+		"rpc.password":          "testpass",
+		"masternode.privateKey": "testkey123",
+	}
+	for key, val := range sensitiveFields {
+		if err := cm.SetFromCLI(key, val); err != nil {
+			t.Fatalf("SetFromCLI(%q) failed: %v", key, err)
+		}
+	}
+
+	values := cm.GetAllValues()
+
+	for key, expected := range sensitiveFields {
+		entry, ok := values[key]
+		if !ok {
+			t.Fatalf("missing %s in GetAllValues", key)
+		}
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected map value for %s", key)
+		}
+		got, _ := m["value"].(string)
+		if got != expected {
+			t.Errorf("GetAllValues[%s] = %q, want %q (value should not be masked)", key, got, expected)
+		}
 	}
 }
 

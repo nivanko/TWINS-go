@@ -98,6 +98,7 @@ type ConfigManager struct {
 	mu             sync.RWMutex
 	config         *Config
 	registry       map[string]*settingDef
+	registryOrder  []string // preserves registration order for GUI display
 	categoryOrder  []string
 	subscribers    map[string][]ChangeHandler
 	cliLocks       map[string]bool
@@ -165,6 +166,7 @@ func (cm *ConfigManager) LoadOrCreate() error {
 // Register adds a setting definition to the registry.
 func (cm *ConfigManager) Register(def *settingDef) {
 	cm.registry[def.Key] = def
+	cm.registryOrder = append(cm.registryOrder, def.Key)
 	// Track category order (preserve insertion order, deduplicate)
 	for _, cat := range cm.categoryOrder {
 		if cat == def.Category {
@@ -432,35 +434,41 @@ func (cm *ConfigManager) GetAllMetadata() []SettingMeta {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	result := make([]SettingMeta, 0, len(cm.registry))
-	for _, def := range cm.registry {
-		result = append(result, def.SettingMeta)
+	// Build a registration-order index so we can preserve insertion order
+	// within each category instead of sorting alphabetically by key.
+	regIndex := make(map[string]int, len(cm.registryOrder))
+	for i, key := range cm.registryOrder {
+		regIndex[key] = i
 	}
 
-	// Sort by category order, then by key within category
-	sort.Slice(result, func(i, j int) bool {
+	result := make([]SettingMeta, 0, len(cm.registry))
+	for _, key := range cm.registryOrder {
+		if def, ok := cm.registry[key]; ok {
+			result = append(result, def.SettingMeta)
+		}
+	}
+
+	// Sort by category order, preserving registration order within each category
+	sort.SliceStable(result, func(i, j int) bool {
 		ci := cm.categoryIndex(result[i].Category)
 		cj := cm.categoryIndex(result[j].Category)
 		if ci != cj {
 			return ci < cj
 		}
-		return result[i].Key < result[j].Key
+		return regIndex[result[i].Key] < regIndex[result[j].Key]
 	})
 
 	return result
 }
 
-// sensitiveKeys lists settings whose values should be masked in GetAllValues
-// to prevent credentials from being exposed to the frontend.
-var sensitiveKeys = map[string]bool{
-	"rpc.username":          true,
-	"rpc.password":          true,
-	"masternode.privateKey": true,
-}
-
 // GetAllValues returns current values and lock states for all settings.
 // Used by the GUI to populate the settings dialog.
-// Sensitive fields (RPC credentials, masternode key) are masked.
+//
+// Sensitive fields (RPC credentials, masternode key) are returned unmasked.
+// This is safe because the GUI runs in the same process via Wails (not over
+// a network API), and the values already exist in the user's twinsd.yml on
+// disk. The frontend handles display-level security via type="password"
+// inputs with eye-icon reveal toggles.
 func (cm *ConfigManager) GetAllValues() map[string]interface{} {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -468,12 +476,6 @@ func (cm *ConfigManager) GetAllValues() map[string]interface{} {
 	values := make(map[string]interface{}, len(cm.registry))
 	for key, def := range cm.registry {
 		val := def.getter(cm.config)
-		// Mask sensitive string values so credentials aren't sent to the frontend
-		if sensitiveKeys[key] {
-			if s, ok := val.(string); ok && s != "" {
-				val = "••••••••"
-			}
-		}
 		values[key] = map[string]interface{}{
 			"value":          val,
 			"locked":         cm.cliLocks[key],

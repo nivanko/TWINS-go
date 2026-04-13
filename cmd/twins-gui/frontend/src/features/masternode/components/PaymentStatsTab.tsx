@@ -23,10 +23,7 @@ const TIER_COLORS: Record<string, string> = {
 type SortColumn = 'tier' | 'paymentCount' | 'totalPaid' | 'lastPaidTime';
 type SortDirection = 'asc' | 'desc';
 
-interface PaymentStatsTabProps {
-  isLoading: boolean;
-  onStatsLoaded?: (stats: PaymentStatsResponse | null) => void;
-}
+// No props — PaymentStatsTab is fully self-contained.
 
 // Format a number with thousands separators
 function formatNumber(n: number): string {
@@ -58,7 +55,7 @@ function formatDateUTC(isoStr: string): string {
   return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
 }
 
-export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isLoading, onStatsLoaded }) => {
+export const PaymentStatsTab: React.FC = React.memo(() => {
   const { t } = useTranslation('masternode');
   const { formatAmount } = useDisplayUnits();
 
@@ -86,16 +83,26 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
 
   // Copy feedback state
   const [copiedTxID, setCopiedTxID] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Mounted ref to prevent state updates after unmount
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
   }, []);
+
+  // Request-ID counter: prevents stale responses from overwriting fresh data
+  // when multiple fetches are in flight (e.g. spam-clicking refresh or a slow
+  // request crossing the auto-refresh boundary).
+  const fetchIdRef = useRef(0);
 
   // Fetch data from backend with current sort/pagination params
   const fetchData = useCallback(async (page: number, size: PageSize, column: SortColumn, direction: SortDirection) => {
+    const localFetchId = ++fetchIdRef.current;
     setIsFetching(true);
     try {
       const result = await GetPaymentStats({
@@ -104,23 +111,22 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
         page,
         pageSize: size,
       });
-      if (mountedRef.current && result) {
+      if (mountedRef.current && localFetchId === fetchIdRef.current && result) {
         setStats(result as PaymentStatsResponse);
         setFetchError(null);
-        onStatsLoaded?.(result as PaymentStatsResponse);
       }
     } catch (error) {
       console.error('Failed to fetch payment stats:', error);
-      if (mountedRef.current) {
+      if (mountedRef.current && localFetchId === fetchIdRef.current) {
         // Keep existing `stats` untouched so stale data stays visible.
         setFetchError(error instanceof Error ? error.message : String(error));
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && localFetchId === fetchIdRef.current) {
         setIsFetching(false);
       }
     }
-  }, [onStatsLoaded]);
+  }, []);
 
   // Stable ref for fetchData params to use in timer
   const fetchParamsRef = useRef({ currentPage, pageSize, sortColumn, sortDirection });
@@ -166,8 +172,12 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
   const handleCopyTxID = useCallback(async (txid: string) => {
     try {
       await CopyToClipboard(txid);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       setCopiedTxID(txid);
-      setTimeout(() => setCopiedTxID(null), 2000);
+      copyTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setCopiedTxID(null);
+        copyTimerRef.current = null;
+      }, 2000);
     } catch {
       // silently ignore
     }
@@ -195,12 +205,10 @@ export const PaymentStatsTab: React.FC<PaymentStatsTabProps> = React.memo(({ isL
     setFetchError(null);
   }, []);
 
-  const showLoading = isLoading || isFetching;
-
   // Loading skeleton — only shown while actively fetching with no prior data
   // and no error. If an error occurred on the first fetch, skip the skeleton
   // and render the error banner instead so the user knows what happened.
-  if (showLoading && !stats && !fetchError) {
+  if (isFetching && !stats && !fetchError) {
     return (
       <div style={{ padding: '16px', color: '#999', fontSize: '12px' }}>
         {t('paymentStats.loading')}

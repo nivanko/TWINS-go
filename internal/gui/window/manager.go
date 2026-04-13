@@ -18,7 +18,7 @@ const (
 	StateIntro    State = "intro"    // Initial setup dialog (674x363)
 	StateSplash   State = "splash"   // Splash screen during loading (480x550)
 	StateMain     State = "main"     // Main application window (1024x768)
-	StateShutdown State = "shutdown" // Shutdown dialog (440x120)
+	StateShutdown State = "shutdown" // Shutdown dialog (480x550)
 )
 
 // WindowPreset defines window dimensions and properties
@@ -56,17 +56,20 @@ func NewManager(ctx context.Context) *Manager {
 	}
 }
 
-// SetSplashHeightExtra adds extra pixels to the splash window height.
+// SetSplashHeightExtra adds extra pixels to the splash and shutdown window heights.
 // Used on Windows where Wails window dimensions include the title bar,
 // reducing the content area below the designed 550px.
+// Both windows use the same 480x550 splash layout and need identical compensation.
 func (m *Manager) SetSplashHeightExtra(extra int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if preset, ok := m.presets[StateSplash]; ok {
-		preset.Height += extra
-		preset.MinHeight += extra
-		preset.MaxHeight += extra
-		m.presets[StateSplash] = preset
+	for _, state := range []State{StateSplash, StateShutdown} {
+		if preset, ok := m.presets[state]; ok {
+			preset.Height += extra
+			preset.MinHeight += extra
+			preset.MaxHeight += extra
+			m.presets[state] = preset
+		}
 	}
 }
 
@@ -107,12 +110,12 @@ func getDefaultPresets() map[State]WindowPreset {
 			AlwaysOnTop: false,
 		},
 		StateShutdown: {
-			Width:       440,
-			Height:      120,
-			MinWidth:    440,
-			MinHeight:   120,
-			MaxWidth:    440,
-			MaxHeight:   120,
+			Width:       480,
+			Height:      550,
+			MinWidth:    480,
+			MinHeight:   550,
+			MaxWidth:    480,
+			MaxHeight:   550,
 			Resizable:   false,
 			Centered:    true,
 			AlwaysOnTop: true,

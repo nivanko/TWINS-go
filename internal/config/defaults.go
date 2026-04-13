@@ -98,6 +98,8 @@ func DefaultConfig() *Config {
 			Keypool:             1000,      // Pre-generate 1000 keys (legacy: -keypool default)
 			SpendZeroConfChange: false,     // Disabled by default — matches legacy C++ -spendzeroconfchange=false; intentional deviation from old GUI default (true)
 			CreateWalletBackups: 10,        // Keep 10 backups (legacy: -createwalletbackups default)
+			AutoCombineTarget:   100000,    // 100,000 TWINS default consolidation target
+			AutoCombineCooldown: 600,       // 10 minutes between consolidation cycles
 		},
 		Staking: StakingConfig{
 			Enabled:             false,          // Staking disabled by default

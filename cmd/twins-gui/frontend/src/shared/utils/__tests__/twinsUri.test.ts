@@ -45,7 +45,7 @@ describe('buildTwinsURI', () => {
 });
 
 describe('MAX_QR_DATA_LENGTH', () => {
-  it('is 2000 characters', () => {
-    expect(MAX_QR_DATA_LENGTH).toBe(2000);
+  it('is 350 characters (Level H + logo overlay on 200px canvas)', () => {
+    expect(MAX_QR_DATA_LENGTH).toBe(350);
   });
 });

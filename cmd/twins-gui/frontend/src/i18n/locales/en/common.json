@@ -132,7 +132,7 @@
   },
   "shutdown": {
     "title": "Shutting Down",
-    "message": "TWINS Wallet is shutting down...",
+    "message": "Shutting down...",
     "pleaseWait": "Please wait while the wallet closes safely.",
     "savingData": "Saving wallet data...",
     "closingConnections": "Closing network connections..."

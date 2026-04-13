@@ -1976,8 +1976,12 @@ func parseCookieFile(cookiePath string) (username, password string, err error) {
 // 3. Cookie authentication (.cookie file in datadir)
 func getRPCCredentials(c *cli.Context) (username, password string) {
 	// 1. Check CLI flags first (highest priority)
-	username = c.String("rpc-user")
-	password = c.String("rpc-password")
+	// Use GetStringFromLineage to walk parent contexts — PropagateAppFlags
+	// copies flag definitions to subcommands, causing c.String() to return
+	// the empty default instead of the app-level value when flags are placed
+	// before the subcommand name (e.g., "twins-cli --rpc-user=x getinfo").
+	username = twinslib.GetStringFromLineage(c, "rpc-user")
+	password = twinslib.GetStringFromLineage(c, "rpc-password")
 	if username != "" && password != "" {
 		return username, password
 	}
@@ -2047,11 +2051,12 @@ func getRPCEndpoint(c *cli.Context) (host string, port int) {
 	}
 
 	// CLI flags override config (highest priority)
-	if c.IsSet("rpc-host") {
-		host = c.String("rpc-host")
+	// Use lineage-aware IsSet so flags before subcommand name are detected.
+	if twinslib.IsSetInLineage(c, "rpc-host") {
+		host = twinslib.GetStringFromLineage(c, "rpc-host")
 	}
-	if c.IsSet("rpc-port") {
-		port = c.Int("rpc-port")
+	if twinslib.IsSetInLineage(c, "rpc-port") {
+		port = twinslib.GetIntFromLineage(c, "rpc-port")
 	}
 
 	return host, port
@@ -2093,7 +2098,7 @@ func executeRPC(c *cli.Context, method string, params []interface{}) error {
 
 	// Build URL
 	scheme := "http"
-	if c.Bool("rpc-tls") {
+	if twinslib.GetBoolFromLineage(c, "rpc-tls") {
 		scheme = "https"
 	}
 	host, port := getRPCEndpoint(c)
@@ -2117,7 +2122,7 @@ func executeRPC(c *cli.Context, method string, params []interface{}) error {
 	}
 
 	// Configure HTTP client with timeout
-	timeout := c.Duration("rpc-timeout")
+	timeout := twinslib.GetDurationFromLineage(c, "rpc-timeout")
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
@@ -2134,11 +2139,11 @@ func executeRPC(c *cli.Context, method string, params []interface{}) error {
 	}
 
 	// Configure TLS if enabled
-	if c.Bool("rpc-tls") {
+	if twinslib.GetBoolFromLineage(c, "rpc-tls") {
 		tlsConfig := &tls.Config{}
 
 		// Load custom certificate if provided
-		certPath := c.String("rpc-cert")
+		certPath := twinslib.GetStringFromLineage(c, "rpc-cert")
 		if certPath != "" {
 			certPool := x509.NewCertPool()
 			certPEM, err := os.ReadFile(certPath)

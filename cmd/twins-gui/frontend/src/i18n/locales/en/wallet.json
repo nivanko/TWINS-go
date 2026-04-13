@@ -150,6 +150,7 @@
     "uri": "URI",
     "copyUri": "Copy URI",
     "uriCopied": "URI copied to clipboard",
+    "addressSelectedFeedback": "Address selected — new address per request disabled",
     "clickToSaveQR": "Click to save QR code as image",
     "qrSaved": "QR code saved",
     "uriTooLong": "URI is very long and may not scan reliably",

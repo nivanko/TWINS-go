@@ -145,31 +145,23 @@ func (bc *BlockChain) disconnectBlock(block *types.Block) error {
 			Warn("Failed to delete stake modifier during disconnect")
 	}
 
+	// Delete block data and indexes within the batch so the entire disconnect
+	// (UTXO rollback + tx deletion + block removal + chain state) is atomic.
+	// A crash between separate operations previously left orphaned spending
+	// references — UTXOs marked as spent by transactions that no longer exist.
+	if err := batch.DeleteBlockDisconnect(blockHash, height); err != nil {
+		return fmt.Errorf("failed to delete block in batch: %w", err)
+	}
+
 	// Update chain tip to parent
 	if err := batch.SetChainState(height-1, block.Header.PrevBlockHash); err != nil {
 		return err
 	}
 
-	// Commit batch
+	// Commit batch — all changes (UTXO unspend, tx deletion, block removal,
+	// chain state update) are persisted atomically in a single Pebble write.
 	if err := batch.Commit(); err != nil {
 		return fmt.Errorf("failed to commit disconnect: %w", err)
-	}
-
-	// Delete block data and indexes from storage
-	// Must use separate DeleteBlockData + DeleteBlockIndex instead of DeleteBlock,
-	// because DeleteBlock calls GetBlock() which needs transactions - but transactions
-	// were already deleted by the batch above
-	if err := bc.storage.DeleteBlockData(blockHash); err != nil {
-		bc.logger.WithError(err).WithFields(map[string]interface{}{
-			"hash":   blockHash.String(),
-			"height": height,
-		}).Warn("Failed to delete block data during disconnect")
-	}
-	if err := bc.storage.DeleteBlockIndex(blockHash); err != nil {
-		bc.logger.WithError(err).WithFields(map[string]interface{}{
-			"hash":   blockHash.String(),
-			"height": height,
-		}).Warn("Failed to delete block indexes during disconnect")
 	}
 
 	// Update in-memory state

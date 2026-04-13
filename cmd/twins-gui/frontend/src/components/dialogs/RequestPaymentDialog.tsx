@@ -9,6 +9,8 @@ import { buildTwinsURI, MAX_QR_DATA_LENGTH } from '@/shared/utils/twinsUri';
 import { writeToClipboard } from '@/shared/utils/clipboard';
 import { truncateAddress } from '@/shared/utils/format';
 import { SaveQRImage } from '@wailsjs/go/main/App';
+import { createCircularLogoDataURL } from '@/shared/utils/qrLogo';
+import { buildQRFilename } from '@/shared/utils/qrFilename';
 
 export const RequestPaymentDialog: React.FC = () => {
   const { t } = useTranslation('wallet');
@@ -21,6 +23,14 @@ export const RequestPaymentDialog: React.FC = () => {
 
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
+  const [qrLogoSrc, setQrLogoSrc] = useState<string | undefined>();
+
+  // Generate circular-bordered logo for QR code
+  useEffect(() => {
+    createCircularLogoDataURL('/icons/twins-logo.png', 64, 4, '#27ae60')
+      .then(setQrLogoSrc)
+      .catch(() => {});
+  }, []);
 
   // Auto-clear copy feedback
   useEffect(() => {
@@ -95,7 +105,11 @@ export const RequestPaymentDialog: React.FC = () => {
       const canvas = qrRef.current.querySelector('canvas');
       if (!canvas) throw new Error('canvas not found');
       const pngBase64 = canvas.toDataURL('image/png');
-      const defaultFilename = `twins-payment-${selectedRequest?.address?.slice(0, 8) || 'qr'}.png`;
+      const defaultFilename = buildQRFilename(
+        selectedRequest?.address,
+        selectedRequest?.label,
+        selectedRequest?.amount,
+      );
       const saved = await SaveQRImage(pngBase64, defaultFilename);
       if (saved) {
         setCopyFeedback(t('receive.requestDialog.imageSaved'));
@@ -104,7 +118,7 @@ export const RequestPaymentDialog: React.FC = () => {
     } catch {
       setCopyFeedback(t('receive.requestDialog.imageSaveFailed'));
     }
-  }, [selectedRequest?.address, t]);
+  }, [selectedRequest?.address, selectedRequest?.label, selectedRequest?.amount, t]);
 
   if (!isRequestDialogOpen || !selectedRequest) return null;
 
@@ -206,10 +220,16 @@ export const RequestPaymentDialog: React.FC = () => {
             <QRCodeCanvas
               value={uri}
               size={200}
-              level="L"
+              level="H"
               includeMargin={false}
               bgColor="#ffffff"
               fgColor="#000000"
+              imageSettings={qrLogoSrc ? {
+                src: qrLogoSrc,
+                height: 76,
+                width: 76,
+                excavate: true,
+              } : undefined}
             />
           </div>
 

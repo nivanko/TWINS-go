@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -131,6 +132,81 @@ func getStringFromLineage(c *cli.Context, name string) string {
 	}
 	// Return default value from current context
 	return c.String(name)
+}
+
+// IsSetInLineage checks if a flag was explicitly set in any context in the lineage.
+func IsSetInLineage(c *cli.Context, name string) bool {
+	if c.IsSet(name) {
+		return true
+	}
+	for _, ctx := range c.Lineage() {
+		if ctx.IsSet(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetStringFromLineage searches for a string flag value through context lineage.
+// Exported wrapper for use by cmd packages (twins-cli, twinsd).
+func GetStringFromLineage(c *cli.Context, name string) string {
+	return getStringFromLineage(c, name)
+}
+
+// GetIntFromLineage searches for an int flag value through context lineage.
+// Same pattern as getStringFromLineage — allows flags before subcommand to be found.
+func GetIntFromLineage(c *cli.Context, name string) int {
+	return getIntFromLineage(c, name)
+}
+
+// GetBoolFromLineage searches for a bool flag value through context lineage.
+func GetBoolFromLineage(c *cli.Context, name string) bool {
+	return getBoolFromLineage(c, name)
+}
+
+// GetDurationFromLineage searches for a duration flag value through context lineage.
+func GetDurationFromLineage(c *cli.Context, name string) time.Duration {
+	return getDurationFromLineage(c, name)
+}
+
+// getIntFromLineage searches for an int flag value through context lineage.
+// Same pattern as getStringFromLineage — allows flags before subcommand to be found.
+func getIntFromLineage(c *cli.Context, name string) int {
+	if c.IsSet(name) {
+		return c.Int(name)
+	}
+	for _, ctx := range c.Lineage() {
+		if ctx.IsSet(name) {
+			return ctx.Int(name)
+		}
+	}
+	return c.Int(name)
+}
+
+// getBoolFromLineage searches for a bool flag value through context lineage.
+func getBoolFromLineage(c *cli.Context, name string) bool {
+	if c.IsSet(name) {
+		return c.Bool(name)
+	}
+	for _, ctx := range c.Lineage() {
+		if ctx.IsSet(name) {
+			return ctx.Bool(name)
+		}
+	}
+	return c.Bool(name)
+}
+
+// getDurationFromLineage searches for a duration flag value through context lineage.
+func getDurationFromLineage(c *cli.Context, name string) time.Duration {
+	if c.IsSet(name) {
+		return c.Duration(name)
+	}
+	for _, ctx := range c.Lineage() {
+		if ctx.IsSet(name) {
+			return ctx.Duration(name)
+		}
+	}
+	return c.Duration(name)
 }
 
 // GetConfigPath returns the configuration file path from context

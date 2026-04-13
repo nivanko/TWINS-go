@@ -165,7 +165,8 @@ type Batch interface {
 	StoreBlock(block *types.Block) error
 	StoreBlockWithHeight(block *types.Block, height uint32) error // For batch processing where height is known
 	StoreTransaction(tx *types.Transaction) error
-	DeleteTransaction(txHash types.Hash, height uint32) error // Delete transaction and its address indexes during block disconnect
+	DeleteTransaction(txHash types.Hash, height uint32) error          // Delete transaction and its address indexes during block disconnect
+	DeleteBlockDisconnect(hash types.Hash, height uint32) error        // Delete block data + indexes atomically within the batch (for disconnect)
 	StoreUTXO(outpoint types.Outpoint, output *types.TxOutput, height uint32, isCoinbase bool) error
 	DeleteUTXOWithData(outpoint types.Outpoint, utxo *types.UTXO) error // Delete UTXO with known data for proper address index cleanup
 	SetChainState(height uint32, hash types.Hash) error

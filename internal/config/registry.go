@@ -149,7 +149,7 @@ func registerAllSettings(cm *ConfigManager) {
 	})
 	cm.Register(&settingDef{
 		SettingMeta: SettingMeta{
-			Key: "wallet.autoCombineTarget", Type: TypeInt64, Default: int64(0),
+			Key: "wallet.autoCombineTarget", Type: TypeInt64, Default: int64(100000),
 			Category: "wallet", Label: "Auto-Combine Target",
 			Description: "Target amount in TWINS for UTXO consolidation (0 = disabled)",
 			HotReload:   true, CLIFlag: "autocombine-target",

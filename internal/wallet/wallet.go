@@ -141,6 +141,7 @@ type Wallet struct {
 	autoCombineTarget       int64
 	autoCombineCooldown     int
 	onConsolidationCallback func(txCount int, totalAmount int64) // Called after consolidation cycle; invoked outside mutex
+	syncChecker             func() bool                          // Returns true when node is fully synced (consensus confidence 100%); nil = skip check
 }
 
 // Config contains wallet configuration
@@ -656,6 +657,15 @@ func (w *Wallet) GetAutoCombineConfig() (enabled bool, target int64, cooldown in
 func (w *Wallet) SetOnConsolidationCallback(fn func(txCount int, totalAmount int64)) {
 	w.mu.Lock()
 	w.onConsolidationCallback = fn
+	w.mu.Unlock()
+}
+
+// SetSyncChecker registers a function that returns true when the node is fully
+// synced with the network. Used by autocombine to skip consolidation during IBD
+// and partial sync. When nil, autocombine runs unconditionally (legacy behavior).
+func (w *Wallet) SetSyncChecker(fn func() bool) {
+	w.mu.Lock()
+	w.syncChecker = fn
 	w.mu.Unlock()
 }
 

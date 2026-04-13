@@ -195,6 +195,7 @@ export const useReceive = () =>
     isLoading: state.isLoading,
     isGeneratingAddress: state.isGeneratingAddress,
     isCreatingRequest: state.isCreatingRequest,
+    addressJustSelected: state.addressJustSelected,
     error: state.error,
     // Actions
     setReuseAddress: state.setReuseAddress,
@@ -205,6 +206,7 @@ export const useReceive = () =>
     openRequestDialog: state.openRequestDialog,
     closeRequestDialog: state.closeRequestDialog,
     selectAddressForRequest: state.selectAddressForRequest,
+    clearAddressJustSelected: state.clearAddressJustSelected,
     fetchReceivingAddresses: state.fetchReceivingAddresses,
     fetchAddressBalances: state.fetchAddressBalances,
     fetchPaymentRequests: state.fetchPaymentRequests,

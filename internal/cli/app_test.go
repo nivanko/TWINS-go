@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -335,6 +336,94 @@ func TestPropagateAppFlags_FlagAfterSubcommand(t *testing.T) {
 	err := app.Run([]string{"test", "getinfo", "--config=/custom/path.yml"})
 	require.NoError(t, err)
 	assert.Equal(t, "/custom/path.yml", capturedConfig)
+}
+
+func TestLineageHelpers_FlagBeforeSubcommand(t *testing.T) {
+	app := CreateBaseApp("test", "test", "1.0.0")
+	app.Flags = append(app.Flags, CommonRPCClientFlags()...)
+
+	var capturedUser, capturedHost string
+	var capturedPort int
+	var capturedTLS bool
+	var capturedTimeout time.Duration
+
+	app.Commands = []*cli.Command{
+		{
+			Name: "getinfo",
+			Action: func(c *cli.Context) error {
+				capturedUser = GetStringFromLineage(c, "rpc-user")
+				capturedHost = GetStringFromLineage(c, "rpc-host")
+				capturedPort = GetIntFromLineage(c, "rpc-port")
+				capturedTLS = GetBoolFromLineage(c, "rpc-tls")
+				capturedTimeout = GetDurationFromLineage(c, "rpc-timeout")
+				return nil
+			},
+		},
+	}
+	PropagateAppFlags(app)
+
+	// Flags BEFORE subcommand name (the bug scenario)
+	err := app.Run([]string{"test", "--rpc-user=myuser", "--rpc-host=10.0.0.1", "--rpc-port=9999", "--rpc-tls", "--rpc-timeout=60s", "getinfo"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "myuser", capturedUser)
+	assert.Equal(t, "10.0.0.1", capturedHost)
+	assert.Equal(t, 9999, capturedPort)
+	assert.True(t, capturedTLS)
+	assert.Equal(t, 60*time.Second, capturedTimeout)
+}
+
+func TestLineageHelpers_FlagAfterSubcommand(t *testing.T) {
+	app := CreateBaseApp("test", "test", "1.0.0")
+	app.Flags = append(app.Flags, CommonRPCClientFlags()...)
+
+	var capturedUser string
+	var capturedPort int
+
+	app.Commands = []*cli.Command{
+		{
+			Name: "getinfo",
+			Action: func(c *cli.Context) error {
+				capturedUser = GetStringFromLineage(c, "rpc-user")
+				capturedPort = GetIntFromLineage(c, "rpc-port")
+				return nil
+			},
+		},
+	}
+	PropagateAppFlags(app)
+
+	// Flags AFTER subcommand name (should also work)
+	err := app.Run([]string{"test", "getinfo", "--rpc-user=myuser", "--rpc-port=9999"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "myuser", capturedUser)
+	assert.Equal(t, 9999, capturedPort)
+}
+
+func TestIsSetInLineage(t *testing.T) {
+	app := CreateBaseApp("test", "test", "1.0.0")
+	app.Flags = append(app.Flags, CommonRPCClientFlags()...)
+
+	var userIsSet, hostIsSet bool
+
+	app.Commands = []*cli.Command{
+		{
+			Name: "getinfo",
+			Action: func(c *cli.Context) error {
+				userIsSet = IsSetInLineage(c, "rpc-user")
+				hostIsSet = IsSetInLineage(c, "rpc-host")
+				return nil
+			},
+		},
+	}
+	PropagateAppFlags(app)
+
+	// Only set rpc-user, not rpc-host
+	err := app.Run([]string{"test", "--rpc-user=myuser", "getinfo"})
+	require.NoError(t, err)
+
+	assert.True(t, userIsSet, "rpc-user was explicitly set")
+	assert.False(t, hostIsSet, "rpc-host was not explicitly set")
 }
 
 // Benchmark tests

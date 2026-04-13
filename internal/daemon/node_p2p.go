@@ -133,9 +133,30 @@ func (n *Node) InitP2P(ctx context.Context, cfg P2PConfig) error {
 	}
 
 	// Wire consensus validator for staking sync validation
-	if cv := syncer.GetConsensusValidator(); cv != nil {
+	cv := syncer.GetConsensusValidator()
+	if cv != nil {
 		n.Consensus.SetConsensusProvider(cv)
 		n.logger.Debug("Consensus validator wired to PoS engine")
+	}
+
+	// Wire autocombine sync gate — only consolidate when fully synced (confidence 100%).
+	// Uses the same ConsensusValidator as staking but requires exact confidence match.
+	if n.Wallet != nil && cv != nil {
+		n.Wallet.SetSyncChecker(func() bool {
+			consensusHeight, confidence, _, err := cv.GetConsensusHeightInfo()
+			if err != nil {
+				return false // consensus unavailable — not synced
+			}
+			if confidence < 1.0 {
+				return false // peers disagree — not fully synced
+			}
+			localHeight, err := n.Blockchain.GetBestHeight()
+			if err != nil {
+				return false
+			}
+			return localHeight == consensusHeight
+		})
+		n.logger.Debug("Autocombine sync checker wired to consensus validator")
 	}
 
 	// BUG FIX #1: Wire block broadcaster for staking (relay staked blocks to P2P network).

@@ -28,8 +28,8 @@ interface ReceivingAddressesDialogProps {
 }
 
 // Shared column widths so the header row aligns with the data rows.
-const COL_LABEL_WIDTH = '200px';
-const COL_BALANCE_WIDTH = '140px';
+const COL_LABEL_WIDTH = '150px';
+const COL_BALANCE_WIDTH = '160px';
 
 export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> = ({
   isOpen,
@@ -245,7 +245,7 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
           flexDirection: 'column',
         }}
       >
-        {/* Header — title on the left, actions + close on the right */}
+        {/* Header — title on the left, close on the right */}
         <div
           style={{
             display: 'flex',
@@ -262,111 +262,38 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
           >
             {t('receive.addressesDialog.title')}
           </h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              type="button"
-              onClick={handleNewAddress}
-              disabled={isGeneratingAddress}
-              aria-label="Create new receiving address"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px',
-                fontSize: '12px',
-                backgroundColor: '#383838',
-                border: '1px solid #4a4a4a',
-                borderRadius: '6px',
-                color: '#ddd',
-                cursor: isGeneratingAddress ? 'not-allowed' : 'pointer',
-                opacity: isGeneratingAddress ? 0.5 : 1,
-                transition: 'background-color 0.15s, border-color 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                if (!isGeneratingAddress) {
-                  const el = e.currentTarget;
-                  el.style.backgroundColor = '#454545';
-                  el.style.borderColor = '#5a5a5a';
-                }
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget;
-                el.style.backgroundColor = '#383838';
-                el.style.borderColor = '#4a4a4a';
-              }}
-            >
-              <Plus size={13} />
-              {t('receive.addressesDialog.new')}
-            </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              disabled={exportDisabled}
-              aria-label="Export addresses to CSV"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px',
-                fontSize: '12px',
-                backgroundColor: '#383838',
-                border: '1px solid #4a4a4a',
-                borderRadius: '6px',
-                color: '#ddd',
-                cursor: exportDisabled ? 'not-allowed' : 'pointer',
-                opacity: exportDisabled ? 0.5 : 1,
-                transition: 'background-color 0.15s, border-color 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                if (!exportDisabled) {
-                  const el = e.currentTarget;
-                  el.style.backgroundColor = '#454545';
-                  el.style.borderColor = '#5a5a5a';
-                }
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget;
-                el.style.backgroundColor = '#383838';
-                el.style.borderColor = '#4a4a4a';
-              }}
-            >
-              <Download size={13} />
-              {t('receive.addressesDialog.export')}
-            </button>
-            <button
-              type="button"
-              onClick={handleClose}
-              aria-label="Close dialog"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '28px',
-                height: '28px',
-                background: 'none',
-                border: '1px solid transparent',
-                borderRadius: '6px',
-                color: '#888',
-                cursor: 'pointer',
-                marginLeft: '4px',
-                transition: 'color 0.15s, border-color 0.15s, background-color 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget;
-                el.style.color = '#ddd';
-                el.style.borderColor = '#4a4a4a';
-                el.style.backgroundColor = '#383838';
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget;
-                el.style.color = '#888';
-                el.style.borderColor = 'transparent';
-                el.style.backgroundColor = 'transparent';
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close dialog"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '28px',
+              height: '28px',
+              background: 'none',
+              border: '1px solid transparent',
+              borderRadius: '6px',
+              color: '#888',
+              cursor: 'pointer',
+              transition: 'color 0.15s, border-color 0.15s, background-color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget;
+              el.style.color = '#ddd';
+              el.style.borderColor = '#4a4a4a';
+              el.style.backgroundColor = '#383838';
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget;
+              el.style.color = '#888';
+              el.style.borderColor = 'transparent';
+              el.style.backgroundColor = 'transparent';
+            }}
+          >
+            <X size={16} />
+          </button>
         </div>
 
         {/* Description */}
@@ -447,6 +374,78 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
               }}
             />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={handleNewAddress}
+              disabled={isGeneratingAddress}
+              aria-label="Create new receiving address"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#4a7c59',
+                border: '1px solid #5a8c69',
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: isGeneratingAddress ? 'not-allowed' : 'pointer',
+                opacity: isGeneratingAddress ? 0.5 : 1,
+                transition: 'background-color 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (!isGeneratingAddress) {
+                  const el = e.currentTarget;
+                  el.style.backgroundColor = '#5a8c69';
+                  el.style.borderColor = '#6a9c79';
+                }
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.backgroundColor = '#4a7c59';
+                el.style.borderColor = '#5a8c69';
+              }}
+            >
+              <Plus size={13} />
+              {t('receive.addressesDialog.new')}
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exportDisabled}
+              aria-label="Export addresses to CSV"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#383838',
+                border: '1px solid #4a4a4a',
+                borderRadius: '6px',
+                color: '#ddd',
+                cursor: exportDisabled ? 'not-allowed' : 'pointer',
+                opacity: exportDisabled ? 0.5 : 1,
+                transition: 'background-color 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (!exportDisabled) {
+                  const el = e.currentTarget;
+                  el.style.backgroundColor = '#454545';
+                  el.style.borderColor = '#5a5a5a';
+                }
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.backgroundColor = '#383838';
+                el.style.borderColor = '#4a4a4a';
+              }}
+            >
+              <Download size={13} />
+              {t('receive.addressesDialog.export')}
+            </button>
+          </div>
         </div>
 
         {/* Error Display */}
@@ -485,6 +484,17 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
               flexShrink: 0,
             }}
           >
+            <span
+              style={{
+                flex: 1,
+                color: '#aaa',
+                fontSize: '11px',
+                fontWeight: 600,
+                minWidth: 0,
+              }}
+            >
+              {t('receive.addressesDialog.addressColumn')}
+            </span>
             <button
               type="button"
               onClick={() => setSortColumn('label')}
@@ -510,17 +520,6 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
               {t('receive.addressesDialog.labelColumn')}
               {renderSortIndicator('label')}
             </button>
-            <span
-              style={{
-                flex: 1,
-                color: '#aaa',
-                fontSize: '11px',
-                fontWeight: 600,
-                minWidth: 0,
-              }}
-            >
-              {t('receive.addressesDialog.addressColumn')}
-            </span>
             <button
               type="button"
               onClick={() => setSortColumn('balance')}
@@ -547,6 +546,8 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
               {t('receive.addressesDialog.balanceColumn')} ({unitLabel})
               {renderSortIndicator('balance')}
             </button>
+            {/* Spacer for the row-level picker button column */}
+            <div style={{ width: '24px', flexShrink: 0 }} />
           </div>
 
           {/* Scrollable rows */}
@@ -618,23 +619,7 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
                         (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent';
                       }}
                     >
-                      {/* Label */}
-                      <div
-                        style={{
-                          width: COL_LABEL_WIDTH,
-                          fontSize: '12px',
-                          color: addr.label ? '#ddd' : '#666',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                        title={addr.label || undefined}
-                      >
-                        {addr.label || t('receive.addressesDialog.noLabel')}
-                      </div>
-
-                      {/* Address + inline copy and use-for-request icons */}
+                      {/* Address + inline copy icon */}
                       <div
                         style={{
                           flex: 1,
@@ -689,38 +674,22 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
                         >
                           <Copy size={12} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUseForRequest(addr.address)}
-                          title={t('receive.addressesDialog.useForRequest')}
-                          aria-label={`${t('receive.addressesDialog.useForRequest')} ${addr.address}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '24px',
-                            height: '24px',
-                            background: 'none',
-                            border: '1px solid #3a3a3a',
-                            borderRadius: '4px',
-                            color: '#888',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            transition: 'color 0.15s, border-color 0.15s',
-                          }}
-                          onMouseEnter={(e) => {
-                            const el = e.currentTarget;
-                            el.style.color = '#6699cc';
-                            el.style.borderColor = '#555';
-                          }}
-                          onMouseLeave={(e) => {
-                            const el = e.currentTarget;
-                            el.style.color = '#888';
-                            el.style.borderColor = '#3a3a3a';
-                          }}
-                        >
-                          <ArrowRight size={12} />
-                        </button>
+                      </div>
+
+                      {/* Label */}
+                      <div
+                        style={{
+                          width: COL_LABEL_WIDTH,
+                          fontSize: '12px',
+                          color: addr.label ? '#ddd' : '#666',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                        title={addr.label || undefined}
+                      >
+                        {addr.label || t('receive.addressesDialog.noLabel')}
                       </div>
 
                       {/* Balance — numeric only; dim '-' when zero */}
@@ -737,6 +706,42 @@ export const ReceivingAddressesDialog: React.FC<ReceivingAddressesDialogProps> =
                       >
                         {hasBalance ? formatAmount(balance, false) : '-'}
                       </span>
+
+                      {/* Use for payment request — visually separated at row edge */}
+                      <button
+                        type="button"
+                        onClick={() => handleUseForRequest(addr.address)}
+                        title={t('receive.addressesDialog.useForRequest')}
+                        aria-label={`${t('receive.addressesDialog.useForRequest')} ${addr.address}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '24px',
+                          height: '24px',
+                          background: 'none',
+                          border: '1px solid #3a3a3a',
+                          borderRadius: '4px',
+                          color: '#6699cc',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          transition: 'color 0.15s, border-color 0.15s, background-color 0.15s',
+                        }}
+                        onMouseEnter={(e) => {
+                          const el = e.currentTarget;
+                          el.style.color = '#88bbee';
+                          el.style.borderColor = '#6699cc';
+                          el.style.backgroundColor = 'rgba(102, 153, 204, 0.1)';
+                        }}
+                        onMouseLeave={(e) => {
+                          const el = e.currentTarget;
+                          el.style.color = '#6699cc';
+                          el.style.borderColor = '#3a3a3a';
+                          el.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <ArrowRight size={12} />
+                      </button>
                     </div>
                   );
                 })}

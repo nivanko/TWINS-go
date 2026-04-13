@@ -131,7 +131,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, metadata, them
   };
   const stakeSplitThreshold = getDaemonValue('staking.stakeSplitThreshold', 200000) as number;
   const autoCombineEnabled = getDaemonValue('wallet.autoCombine', false) as boolean;
-  const autoCombineTarget = getDaemonValue('wallet.autoCombineTarget', 10000) as number;
+  const autoCombineTarget = getDaemonValue('wallet.autoCombineTarget', 100000) as number;
   const autoCombineCooldown = getDaemonValue('wallet.autoCombineCooldown', 600) as number;
 
   const sectionStyle: React.CSSProperties = {

@@ -55,6 +55,10 @@ export interface ReceiveState {
   // Per-address spendable balances (address -> balance in TWINS)
   addressBalances: Record<string, number>;
 
+  // Set to true by selectAddressForRequest so the Receive page can show
+  // a toast + highlight animation. Consumed and cleared by the page.
+  addressJustSelected: boolean;
+
   // Error state
   error: string | null;
 }
@@ -76,10 +80,14 @@ export interface ReceiveActions {
   // currentAddress, flips reuseAddress to true (so the picked address
   // survives through createPaymentRequest instead of being replaced by a
   // freshly generated one on the post-submit rotate), closes the
-  // addresses dialog, and clears any lingering error. Form fields
-  // (label/amount/message) are intentionally preserved so the user does
-  // not lose in-progress input.
+  // addresses dialog, sets addressJustSelected for UI feedback, and
+  // clears any lingering error. Form fields (label/amount/message) are
+  // intentionally preserved so the user does not lose in-progress input.
   selectAddressForRequest: (address: string) => void;
+
+  // Clears the addressJustSelected flag after the Receive page has
+  // consumed it to show the toast + highlight animation.
+  clearAddressJustSelected: () => void;
 
   // Async actions (thunks)
   fetchReceivingAddresses: () => Promise<void>;
@@ -116,6 +124,7 @@ const initialState: ReceiveState = {
   isRequestDialogOpen: false,
   selectedRequest: null,
   addressBalances: {},
+  addressJustSelected: false,
   isLoading: false,
   isGeneratingAddress: false,
   isCreatingRequest: false,
@@ -176,8 +185,14 @@ export const createReceiveSlice: SliceCreator<ReceiveSlice> = (set, get) => ({
     set(() => ({
       currentAddress: address,
       reuseAddress: true,
+      addressJustSelected: true,
       isAddressesDialogOpen: false,
       error: null,
+    })),
+
+  clearAddressJustSelected: () =>
+    set(() => ({
+      addressJustSelected: false,
     })),
 
   // Async actions
