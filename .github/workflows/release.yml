@@ -412,7 +412,7 @@ jobs:
 
   linux:
     name: Linux ${{ matrix.label }} package
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
     needs: metadata
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_linux == false }}
     strategy:
@@ -420,6 +420,7 @@ jobs:
       matrix:
         include:
           - label: x86_64
+            runner: ubuntu-22.04
             goarch: amd64
             goarm: ""
             cc: x86_64-linux-gnu-gcc
@@ -430,16 +431,18 @@ jobs:
             libs_arch: linux_amd64
             package_suffix: x86_64-linux-gnu
           - label: arm64
+            runner: ubuntu-22.04-arm
             goarch: arm64
             goarm: ""
-            cc: aarch64-linux-gnu-gcc
+            cc: gcc
             host: aarch64-linux-gnu
             pkg_config_arch: aarch64-linux-gnu
-            ubuntu_arch: arm64
-            apt_packages: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+            ubuntu_arch: ""
+            apt_packages: ""
             libs_arch: linux_arm64
             package_suffix: aarch64-linux-gnu
           - label: armhf
+            runner: ubuntu-22.04
             goarch: arm
             goarm: "7"
             cc: arm-linux-gnueabihf-gcc
@@ -496,8 +499,11 @@ jobs:
             autotools-dev \
             pkg-config \
             tar \
-            zip \
-            $LINUX_APT_PACKAGES
+            zip
+
+          if [ -n "$LINUX_APT_PACKAGES" ]; then
+            sudo apt-get install -y $LINUX_APT_PACKAGES
+          fi
 
           if [ -n "$LINUX_UBUNTU_ARCH" ]; then
             sudo dpkg --add-architecture "$LINUX_UBUNTU_ARCH"
@@ -535,6 +541,8 @@ jobs:
 
           wget -q "https://download.oracle.com/berkeley-db/db-${BDB_VERSION}.tar.gz" -O "${RUNNER_TEMP}/db-${BDB_VERSION}.tar.gz"
           tar xzf "${RUNNER_TEMP}/db-${BDB_VERSION}.tar.gz" -C "$src_dir" --strip-components=1
+          chmod u+w "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub" 2>/dev/null || true
+          rm -f "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub"
           if [ -f /usr/share/misc/config.guess ] && [ -f /usr/share/misc/config.sub ]; then
             cp /usr/share/misc/config.guess "${src_dir}/dist/config.guess"
             cp /usr/share/misc/config.sub "${src_dir}/dist/config.sub"
@@ -584,6 +592,8 @@ jobs:
           tar xzf "${RUNNER_TEMP}/db-${static_bdb_version}-${LINUX_HOST}.tar.gz" -C "$RUNNER_TEMP"
           mv "${RUNNER_TEMP}/db-${static_bdb_version}" "$src_dir"
 
+          chmod u+w "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub" 2>/dev/null || true
+          rm -f "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub"
           if [ -f /usr/share/misc/config.guess ] && [ -f /usr/share/misc/config.sub ]; then
             cp /usr/share/misc/config.guess "${src_dir}/dist/config.guess"
             cp /usr/share/misc/config.sub "${src_dir}/dist/config.sub"
@@ -625,7 +635,7 @@ jobs:
           ldflags="${ldflags} -X ${VERSION_PKG}.GitCommit=${COMMIT}"
           ldflags="${ldflags} -X ${VERSION_PKG}.BuildDate=${BUILD_DATE}"
 
-          output_dir="${BUILD_DIR}/linux_${LINUX_GOARCH}"
+          output_dir="${BUILD_DIR}/${LINUX_LIBS_ARCH}"
           bdb_path="${RUNNER_TEMP}/bdb/${LINUX_HOST}"
           mkdir -p "$output_dir"
           export GOFLAGS="-trimpath"
@@ -675,7 +685,7 @@ jobs:
 
           package_name="twins-${VERSION}-${LINUX_PACKAGE_SUFFIX}"
           package_dir="${BUILD_DIR}/${package_name}"
-          bin_dir="${BUILD_DIR}/linux_${LINUX_GOARCH}"
+          bin_dir="${BUILD_DIR}/${LINUX_LIBS_ARCH}"
 
           mkdir -p "${package_dir}/bin" "${package_dir}/conf"
 
