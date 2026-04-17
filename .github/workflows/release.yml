@@ -949,6 +949,11 @@ jobs:
       RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
