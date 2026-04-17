@@ -493,6 +493,7 @@ jobs:
             ca-certificates \
             wget \
             curl \
+            autotools-dev \
             pkg-config \
             tar \
             zip \
@@ -534,14 +535,21 @@ jobs:
 
           wget -q "https://download.oracle.com/berkeley-db/db-${BDB_VERSION}.tar.gz" -O "${RUNNER_TEMP}/db-${BDB_VERSION}.tar.gz"
           tar xzf "${RUNNER_TEMP}/db-${BDB_VERSION}.tar.gz" -C "$src_dir" --strip-components=1
-          wget -q -O "${src_dir}/dist/config.guess" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
-          wget -q -O "${src_dir}/dist/config.sub" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD"
+          if [ -f /usr/share/misc/config.guess ] && [ -f /usr/share/misc/config.sub ]; then
+            cp /usr/share/misc/config.guess "${src_dir}/dist/config.guess"
+            cp /usr/share/misc/config.sub "${src_dir}/dist/config.sub"
+          else
+            wget -q -O "${src_dir}/dist/config.guess" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
+            wget -q -O "${src_dir}/dist/config.sub" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD"
+          fi
           chmod +x "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub"
+          test -x "${src_dir}/dist/config.guess"
+          test -x "${src_dir}/dist/config.sub"
 
           build_type="$(gcc -dumpmachine)"
           cd "$build_dir"
-          CC="$LINUX_CC" \
-            "${src_dir}/dist/configure" \
+          CC="$LINUX_CC" CONFIG_SHELL=/bin/bash SHELL=/bin/bash \
+            bash "${src_dir}/dist/configure" \
             --build="$build_type" \
             --host="$LINUX_HOST" \
             --enable-cxx \
@@ -576,15 +584,23 @@ jobs:
           tar xzf "${RUNNER_TEMP}/db-${static_bdb_version}-${LINUX_HOST}.tar.gz" -C "$RUNNER_TEMP"
           mv "${RUNNER_TEMP}/db-${static_bdb_version}" "$src_dir"
 
-          wget -q -O "${src_dir}/dist/config.guess" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
-          wget -q -O "${src_dir}/dist/config.sub" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD"
+          if [ -f /usr/share/misc/config.guess ] && [ -f /usr/share/misc/config.sub ]; then
+            cp /usr/share/misc/config.guess "${src_dir}/dist/config.guess"
+            cp /usr/share/misc/config.sub "${src_dir}/dist/config.sub"
+          else
+            wget -q -O "${src_dir}/dist/config.guess" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
+            wget -q -O "${src_dir}/dist/config.sub" "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD"
+          fi
           chmod +x "${src_dir}/dist/config.guess" "${src_dir}/dist/config.sub"
+          test -x "${src_dir}/dist/config.guess"
+          test -x "${src_dir}/dist/config.sub"
           sed -i 's/__atomic_compare_exchange/__atomic_compare_exchange_db/g' "${src_dir}/src/dbinc/atomic.h"
 
           build_type="$(gcc -dumpmachine)"
           cd "$build_dir"
           CC="$LINUX_CC" CFLAGS="-fPIC" \
-            ../dist/configure \
+            CONFIG_SHELL=/bin/bash SHELL=/bin/bash \
+            bash ../dist/configure \
             --build="$build_type" \
             --host="$LINUX_HOST" \
             --prefix="$install_dir" \
