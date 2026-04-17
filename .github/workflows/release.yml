@@ -448,7 +448,7 @@ jobs:
             cc: arm-linux-gnueabihf-gcc
             host: arm-linux-gnueabihf
             pkg_config_arch: arm-linux-gnueabihf
-            ubuntu_arch: armhf
+            ubuntu_arch: ""
             apt_packages: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
             libs_arch: linux_arm
             package_suffix: arm-linux-gnueabihf
@@ -514,7 +514,11 @@ jobs:
               echo "WARN: cross-architecture WebKit dependencies unavailable for ${LINUX_UBUNTU_ARCH}; twins-gui will be skipped for this target"
             fi
           else
-            sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+            if [ "$LINUX_GOARCH" = "arm" ]; then
+              echo "Skipping armhf WebKit dependencies; twins-gui will be skipped for this target"
+            else
+              sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+            fi
           fi
 
       - name: Build GUI frontend
