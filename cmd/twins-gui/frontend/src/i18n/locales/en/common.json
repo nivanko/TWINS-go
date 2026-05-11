@@ -110,6 +110,9 @@
     "walletStakingOnly": "Wallet unlocked for staking only",
     "stakingActive": "Staking active",
     "stakingInactive": "Staking inactive",
+    "multisend": "MultiSend",
+    "multisendActive": "Active",
+    "multisendNotActive": "Not Active",
     "connections": "{{count}} network connection",
     "connections_other": "{{count}} network connections",
     "unitTooltip": "Unit to show amounts in. Click to select another unit."

@@ -5,6 +5,7 @@ import { useCoinControl } from '@/store/useStore';
 import { UTXO } from '@/shared/types/wallet.types';
 import { IsMasternodeCollateral } from '@wailsjs/go/main/App';
 import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
+import { IconButton } from '@/shared/components/IconButton';
 
 interface CoinControlDialogProps {
   recipientAmount?: number;
@@ -273,58 +274,60 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
       }}
     >
       <div
-        className="bg-[#2b2b2b] rounded-lg shadow-xl w-[950px] max-h-[600px] flex flex-col"
-        style={{ border: '1px solid #555' }}
+        className="bg-[#2f2f2f] rounded-lg shadow-xl w-[950px] max-h-[600px] flex flex-col"
+        style={{ border: '1px solid #3a3a3a' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#555]">
-          <h2 className="text-lg font-semibold text-[#ddd]">{t('coinControl.dialogTitle')}</h2>
-          <button
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3a3a3a]">
+          <h2 style={{ fontSize: '13px', fontWeight: 600, color: '#ccc', margin: 0 }}>
+            {t('coinControl.dialogTitle')}
+          </h2>
+          <IconButton
+            icon={<X size={14} />}
+            title={t('coinControl.close', 'Close')}
+            ariaLabel={t('coinControl.close', 'Close')}
             onClick={cancelDialog}
-            className="text-[#999] hover:text-[#ddd] transition-colors"
-          >
-            <X size={20} />
-          </button>
+          />
         </div>
 
         {/* Summary Statistics */}
-        <div className="grid grid-cols-4 gap-4 px-6 py-3 border-b border-[#555] bg-[#333]">
+        <div className="grid grid-cols-4 gap-4 px-6 py-3 border-b border-[#3a3a3a] bg-[#2a2a2a]">
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.quantity')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.quantity')}:</div>
             <div className="text-sm text-[#ddd]">{summary?.quantity || 0}</div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.amount')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.amount')}:</div>
             <div className="text-sm text-[#ddd]">
               {summary ? formatAmount(summary.amount) : '0.00000000'}
             </div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.fee')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.fee')}:</div>
             <div className="text-sm text-[#ddd]">
               {summary ? formatAmount(summary.fee) : '0.00000000'}
             </div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.afterFee')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.afterFee')}:</div>
             <div className="text-sm text-[#ddd]">
               {summary ? formatAmount(summary.afterFee) : '0.00000000'}
             </div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.bytes')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.bytes')}:</div>
             <div className="text-sm text-[#ddd]">{summary?.bytes || 0}</div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.priority')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.priority')}:</div>
             <div className="text-sm text-[#ddd]">{summary?.priority || 'medium'}</div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.dust')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.dust')}:</div>
             <div className="text-sm text-[#ddd]">{summary?.dust ? t('coinControl.yes') : t('coinControl.no')}</div>
           </div>
           <div>
-            <div className="text-xs text-[#999] font-bold">{t('coinControl.change')}:</div>
+            <div className="text-xs text-[#888]">{t('coinControl.change')}:</div>
             <div className="text-sm text-[#ddd]">
               {summary ? formatAmount(summary.change) : '0.00000000'}
             </div>
@@ -332,11 +335,11 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-[#555]">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-[#3a3a3a]">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode(viewMode === 'tree' ? 'list' : 'tree')}
-              className="px-3 py-1 text-sm bg-[#444] text-[#ddd] rounded hover:bg-[#555] transition-colors flex items-center gap-1"
+              className="px-3 py-1 text-sm bg-[#383838] border border-[#4a4a4a] text-[#ccc] rounded-md hover:bg-[#444444] transition-colors flex items-center gap-1"
             >
               {viewMode === 'tree' ? (
                 <>
@@ -354,7 +357,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
             <select
               value={filterMode}
               onChange={(e) => setFilterMode(e.target.value as any)}
-              className="px-3 py-1 text-sm bg-[#444] text-[#ddd] rounded border border-[#555]"
+              className="px-3 py-1 text-sm bg-[#252525] text-[#ddd] rounded border border-[#3a3a3a]"
             >
               <option value="all">{t('coinControl.filterAll')}</option>
               <option value="spendable">{t('coinControl.filterSpendable')}</option>
@@ -366,7 +369,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={allSelected ? unselectAll : selectAll}
-              className="px-3 py-1 text-sm bg-[#444] text-[#ddd] rounded hover:bg-[#555] transition-colors"
+              className="px-3 py-1 text-sm bg-[#383838] border border-[#4a4a4a] text-[#ccc] rounded-md hover:bg-[#444444] transition-colors"
             >
               {allSelected ? t('coinControl.deselectAll') : t('coinControl.selectAll')}
             </button>
@@ -378,7 +381,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                 );
                 toggleAllLocks(selectedUTXOs);
               }}
-              className="px-3 py-1 text-sm bg-[#444] text-[#ddd] rounded hover:bg-[#555] transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 text-sm bg-[#383838] border border-[#4a4a4a] text-[#ccc] rounded-md hover:bg-[#444444] transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Lock size={14} />
               {t('coinControl.toggleLock')}
@@ -395,7 +398,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
           ) : viewMode === 'list' ? (
             /* List View */
             <table className="w-full text-sm">
-              <thead className="text-[#999] border-b border-[#555]">
+              <thead className="text-[#888] border-b border-[#3a3a3a]">
                 <tr>
                   <th className="text-left py-2 w-14"></th>
                   <th
@@ -433,7 +436,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                     <tr
                       key={`${utxo.txid}:${utxo.vout}`}
                       onContextMenu={(e) => handleContextMenu(e, utxo)}
-                      className={`border-b border-[#444] hover:bg-[#333] transition-colors cursor-pointer ${
+                      className={`border-b border-[#3a3a3a] hover:bg-[#333] transition-colors cursor-pointer ${
                         utxo.locked ? 'opacity-50' : ''
                       }`}
                     >
@@ -492,10 +495,10 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
             /* Tree View - Grouped by Address */
             <div className="space-y-1">
               {buildTreeView().map((node) => (
-                <div key={node.address} className="border border-[#444] rounded">
+                <div key={node.address} className="border border-[#3a3a3a] rounded-md">
                   {/* Address Header Row */}
                   <div
-                    className="flex items-center gap-2 px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] cursor-pointer"
+                    className="flex items-center gap-2 px-3 py-2 bg-[#2a2a2a] hover:bg-[#333] cursor-pointer"
                     onClick={() => node.address && toggleAddressExpanded(node.address)}
                   >
                     <button className="text-[#999] hover:text-[#ddd]">
@@ -532,14 +535,14 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
 
                   {/* Child UTXOs */}
                   {node.expanded && node.utxos && (
-                    <div className="border-t border-[#444]">
+                    <div className="border-t border-[#3a3a3a]">
                       {node.utxos.map((utxo) => {
                         const selected = isCoinSelected(utxo);
                         return (
                           <div
                             key={`${utxo.txid}:${utxo.vout}`}
                             onContextMenu={(e) => handleContextMenu(e, utxo)}
-                            className={`flex items-center gap-2 px-3 py-2 pl-10 hover:bg-[#333] cursor-pointer border-b border-[#444] last:border-b-0 ${
+                            className={`flex items-center gap-2 px-3 py-2 pl-10 hover:bg-[#333] cursor-pointer border-b border-[#3a3a3a] last:border-b-0 ${
                               utxo.locked ? 'opacity-50' : ''
                             }`}
                           >
@@ -596,7 +599,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
 
         {/* Pagination (list view only) */}
         {viewMode === 'list' && filteredAndSortedUTXOs.length > 0 && (
-          <div className="flex items-center justify-between px-6 py-2 border-t border-[#555]">
+          <div className="flex items-center justify-between px-6 py-2 border-t border-[#3a3a3a]">
             <span style={{ fontSize: '11px', color: '#999' }}>
               Showing {Math.min((currentPage - 1) * pageSize + 1, filteredAndSortedUTXOs.length)}-{Math.min(currentPage * pageSize, filteredAndSortedUTXOs.length)} of {filteredAndSortedUTXOs.length} UTXOs
             </span>
@@ -609,8 +612,8 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                 style={{
                   padding: '2px 6px',
                   backgroundColor: 'transparent',
-                  border: '1px solid #555',
-                  borderRadius: '2px',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '4px',
                   color: currentPage <= 1 ? '#555' : '#ddd',
                   cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
                   display: 'flex',
@@ -629,8 +632,8 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                 style={{
                   padding: '2px 6px',
                   backgroundColor: 'transparent',
-                  border: '1px solid #555',
-                  borderRadius: '2px',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '4px',
                   color: currentPage <= 1 ? '#555' : '#ddd',
                   cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
                   display: 'flex',
@@ -654,8 +657,8 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                 style={{
                   padding: '2px 6px',
                   backgroundColor: 'transparent',
-                  border: '1px solid #555',
-                  borderRadius: '2px',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '4px',
                   color: currentPage >= totalPages ? '#555' : '#ddd',
                   cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
                   display: 'flex',
@@ -674,8 +677,8 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                 style={{
                   padding: '2px 6px',
                   backgroundColor: 'transparent',
-                  border: '1px solid #555',
-                  borderRadius: '2px',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '4px',
                   color: currentPage >= totalPages ? '#555' : '#ddd',
                   cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
                   display: 'flex',
@@ -697,9 +700,9 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
                   marginLeft: '12px',
                   padding: '2px 4px',
                   fontSize: '11px',
-                  backgroundColor: '#2b2b2b',
-                  border: '1px solid #555',
-                  borderRadius: '2px',
+                  backgroundColor: '#252525',
+                  border: '1px solid #3a3a3a',
+                  borderRadius: '4px',
                   color: '#ddd',
                 }}
               >
@@ -714,16 +717,16 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
         )}
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#555]">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#3a3a3a]">
           <button
             onClick={cancelDialog}
-            className="px-4 py-2 text-sm bg-[#444] text-[#ddd] rounded hover:bg-[#555] transition-colors"
+            className="px-4 py-2 text-sm bg-[#383838] border border-[#4a4a4a] text-[#ccc] rounded-md hover:bg-[#444444] transition-colors"
           >
             {t('coinControl.cancel')}
           </button>
           <button
             onClick={closeDialog}
-            className="px-4 py-2 text-sm bg-[#0066cc] text-white rounded hover:bg-[#0052a3] transition-colors"
+            className="px-4 py-2 text-sm bg-[#4a7c59] border border-[#5a8c69] text-white font-medium rounded-md hover:bg-[#5a8c69] transition-colors"
           >
             {t('coinControl.applySelection')}
           </button>
@@ -731,7 +734,10 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
 
         {/* Copy feedback toast */}
         {copyFeedback && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[#333] text-[#ddd] px-4 py-2 rounded shadow-lg text-sm z-50 border border-[#555]">
+          <div
+            className="fixed left-1/2 transform -translate-x-1/2 bg-[#333] text-[#ddd] px-4 py-2 rounded shadow-lg text-sm z-50 border border-[#555]"
+            style={{ bottom: 'calc(var(--qt-statusbar-height) + 12px)' }}
+          >
             {copyFeedback}
           </div>
         )}
@@ -767,7 +773,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
 
         {contextMenu && (
           <div
-            className="fixed bg-[#2b2b2b] border border-[#555] rounded shadow-lg py-1 z-50"
+            className="fixed bg-[#2f2f2f] border border-[#3a3a3a] rounded-md shadow-lg py-1 z-50"
             style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
           >
             <button
@@ -798,7 +804,7 @@ export const CoinControlDialog: React.FC<CoinControlDialogProps> = ({
               <Copy size={14} />
               {t('coinControl.copyUtxo', 'Copy UTXO')}
             </button>
-            <div className="border-t border-[#555] my-1"></div>
+            <div className="border-t border-[#3a3a3a] my-1"></div>
             <button
               onClick={async () => {
                 // If unlocking, check if it's masternode collateral first

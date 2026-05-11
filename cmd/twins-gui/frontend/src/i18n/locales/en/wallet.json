@@ -76,14 +76,16 @@
     "contactExistsMessage": "This address is already in your address book",
     "recipients": {
       "add": "Add Recipient",
+      "maxReached": "Maximum of {{max}} recipients per transaction",
       "title": "Recipient {{number}}",
       "remove": "Remove this entry",
-      "removeLabel": "Remove",
       "useMaximum": "Use available balance",
       "subtractFee": "Subtract fee from amount"
     },
     "fee": {
       "label": "Transaction Fee",
+      "smartFeeTooltip": "Smart fee estimation initializes after a few blocks.",
+      "smartFeeUnavailableTooltip": "Fee estimation unavailable — using default fee rate. Ensure sufficient balance for fees.",
       "normal": "Normal",
       "fast": "Fast",
       "recommended": "Recommended",

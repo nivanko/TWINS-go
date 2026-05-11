@@ -66,8 +66,8 @@ func (n *Node) InitP2P(ctx context.Context, cfg P2PConfig) error {
 	p2pServer.SetMasternodeManager(n.Masternode)
 
 	// Wire debug collector to P2P server for masternode activity tracing
-	if n.DebugCollector != nil {
-		p2pServer.SetDebugCollector(n.DebugCollector)
+	if dc := n.DebugCollector.Load(); dc != nil {
+		p2pServer.SetDebugCollector(dc)
 	}
 
 	// Inject cached masternode addresses as priority bootstrap peers.
@@ -383,7 +383,23 @@ func (n *Node) InitRPC(cfg RPCConfig) error {
 		return nil
 	}
 
-	rpcHost, rpcPort := parseHostPort(cfg.ListenAddr, types.DefaultRPCHost, types.DefaultRPCPort)
+	// Determine RPC host/port: CLI flag (ListenAddr) > config file > defaults.
+	// When ListenAddr is empty (e.g. GUI), fall back to config file values
+	// so that rpc.host/rpc.port from twinsd.yml are respected.
+	listenAddr := cfg.ListenAddr
+	if listenAddr == "" && cfg.FullConfig != nil {
+		if cfg.FullConfig.RPC.Host != "" {
+			listenAddr = cfg.FullConfig.RPC.Host
+		}
+		if cfg.FullConfig.RPC.Port > 0 {
+			if listenAddr == "" {
+				listenAddr = fmt.Sprintf(":%d", cfg.FullConfig.RPC.Port)
+			} else {
+				listenAddr = fmt.Sprintf("%s:%d", listenAddr, cfg.FullConfig.RPC.Port)
+			}
+		}
+	}
+	rpcHost, rpcPort := parseHostPort(listenAddr, types.DefaultRPCHost, types.DefaultRPCPort)
 
 	rpcConfig := rpc.DefaultConfig()
 	rpcConfig.Host = rpcHost
@@ -404,6 +420,29 @@ func (n *Node) InitRPC(cfg RPCConfig) error {
 		if cfg.FullConfig.RPC.Timeout > 0 {
 			rpcConfig.ReadTimeout = time.Duration(cfg.FullConfig.RPC.Timeout) * time.Second
 			rpcConfig.WriteTimeout = time.Duration(cfg.FullConfig.RPC.Timeout) * time.Second
+		}
+
+		// Wire TLS and plaintext safety settings.
+		// Double-gate: AllowPlaintextPublic requires BOTH twinsd.yml setting AND
+		// --rpc-allow-plaintext-public CLI flag. YAML alone is not sufficient —
+		// the CLI flag locks the key in ConfigManager, proving explicit intent.
+		if cfg.FullConfig.RPC.AllowPlaintextPublic && n.ConfigManager != nil && n.ConfigManager.IsLocked("rpc.allowPlaintextPublic") {
+			rpcConfig.AllowPlaintextPublic = true
+		}
+		rpcConfig.TLS = rpc.TLSConfig{
+			Enabled:              cfg.FullConfig.RPC.TLS.Enabled,
+			CertFile:             cfg.FullConfig.RPC.TLS.CertFile,
+			KeyFile:              cfg.FullConfig.RPC.TLS.KeyFile,
+			ExpiryWarnDays:       cfg.FullConfig.RPC.TLS.ExpiryWarnDays,
+			ReloadPassphraseFile: cfg.FullConfig.RPC.TLS.ReloadPassphraseFile,
+			MTLS: rpc.MTLSConfig{
+				Enabled:      cfg.FullConfig.RPC.TLS.MTLS.Enabled,
+				ClientCAFile: cfg.FullConfig.RPC.TLS.MTLS.ClientCAFile,
+			},
+			Client: rpc.ClientTLSConfig{
+				CAFile:    cfg.FullConfig.RPC.TLS.Client.CAFile,
+				PinSHA256: cfg.FullConfig.RPC.TLS.Client.PinSHA256,
+			},
 		}
 	}
 
@@ -468,15 +507,12 @@ func (n *Node) InitRPC(cfg RPCConfig) error {
 	// Wire all RPC dependencies
 	n.wireRPCDependencies(rpcServer, cfg)
 
-	// Start RPC server
-	go func() {
-		if err := rpcServer.Start(); err != nil {
-			n.logger.WithError(err).Error("RPC server error")
-		}
-	}()
-
-	// Give RPC server time to start
-	time.Sleep(types.RPCStartDelay)
+	// Start RPC server synchronously. Start() returns quickly after binding
+	// the listener and launching the Serve goroutine internally. Errors from
+	// the fail-safe, TLS initialization, or bind failures propagate here.
+	if err := rpcServer.Start(); err != nil {
+		return fmt.Errorf("RPC server start failed: %w", err)
+	}
 
 	n.mu.Lock()
 	n.RPCServer = rpcServer

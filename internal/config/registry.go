@@ -599,7 +599,7 @@ func registerAllSettings(cm *ConfigManager) {
 			Key: "masternode.debug", Type: TypeBool, Default: false,
 			Category: "masternode", Label: "Debug Events",
 			Description: "Enable masternode debug event collection to JSONL file",
-			HotReload:   false, EnvVar: "TWINS_MASTERNODE_DEBUG",
+			HotReload:   true, EnvVar: "TWINS_MASTERNODE_DEBUG",
 		},
 		getter: func(c *Config) interface{} { return c.Masternode.Debug },
 		setter: func(c *Config, v interface{}) error { c.Masternode.Debug = v.(bool); return nil },

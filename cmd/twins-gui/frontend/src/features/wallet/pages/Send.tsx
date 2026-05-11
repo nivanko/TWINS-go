@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Plus } from 'lucide-react';
 import { useStore, useCoinControl, useAddressBook, useNotifications } from '@/store/useStore';
 import { useDisplayUnits } from '@/shared/hooks/useDisplayUnits';
+import { Banner } from '@/shared/components/Banner';
+import { PillButton } from '@/shared/components/PillButton';
 import { ConfirmationDialog, Recipient, SendTransactionResult } from '../components/ConfirmationDialog';
 import { CoinControlDialog } from '../components/CoinControlDialog';
 import { SendCoinControl } from '../components/SendCoinControl';
@@ -30,10 +33,23 @@ import {
 } from '@/utils/amountValidation';
 import { calculateTotalFee, MIN_TX_FEE } from '@/utils/feeCalculation';
 
+// Design tokens (mirroring Receive page; see frontend/CLAUDE.md "Design Tokens")
+const CARD_PADDING_STANDARD = '20px';
+const cardStyle: React.CSSProperties = {
+  backgroundColor: '#2f2f2f',
+  border: '1px solid #3a3a3a',
+  borderRadius: '8px',
+  padding: CARD_PADDING_STANDARD,
+};
+
 // TWINS address validation regex
 // MainNet: W (P2PKH, prefix 0x49) and a (P2SH, prefix 0x53)
 // TestNet: m or n (P2PKH, prefix 0x6F)
 const TWINS_ADDRESS_REGEX = /^[Wamn][a-km-zA-HJ-NP-Z1-9]{33}$/;
+
+// Soft UX cap. The daemon's hard bound is the 100 KB MAX_STANDARD_TX_SIZE;
+// 100 recipients stays well under that ceiling.
+const MAX_RECIPIENTS = 100;
 
 // Form validation schemas
 const recipientSchema = z.object({
@@ -506,6 +522,7 @@ export const Send: React.FC = () => {
   };
 
   const handleAddRecipient = () => {
+    if (watchedRecipients.length >= MAX_RECIPIENTS) return;
     append({ address: '', amount: '', label: '' });
   };
 
@@ -613,6 +630,8 @@ export const Send: React.FC = () => {
     transactionTotals.recipientsTotal > 0 &&
     !transactionTotals.canSend;
 
+  const isMaxRecipientsReached = watchedRecipients.length >= MAX_RECIPIENTS;
+
   // Block send while wallet is out of sync — displayed balance may be stale
   // Pessimistic default: treat as out-of-sync until first blockchain info arrives.
   // Also covers is_connecting (no peers yet) where is_syncing/is_out_of_sync may be false
@@ -622,148 +641,116 @@ export const Send: React.FC = () => {
   const isSendDisabled = isInsufficientBalance || isOutOfSync;
 
   return (
-    <div className="qt-frame" style={{ height: '100%', overflow: 'auto' }}>
-      <div className="qt-vbox" style={{ padding: '8px' }}>
-        {/* Page Header */}
-        <div className="qt-header-label" style={{ marginBottom: '8px', fontSize: '18px' }}>
-          {t('send.title').toUpperCase()}
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)}>
-          {/* Coin Control Features Section (gated by Expert setting) */}
+    <div className="qt-frame" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Coin Control card (gated by Expert setting) */}
           {coinControlEnabled && (
-            <SendCoinControl
+            <div style={cardStyle}>
+              <SendCoinControl
+                register={register}
+                control={control}
+                watchedCustomChangeAddress={watchedCustomChangeAddress}
+                watchedSplitUTXO={watchedSplitUTXO}
+                calculateUTXOSize={calculateUTXOSize}
+                onOpenCoinControl={openDialog}
+              />
+            </div>
+          )}
+
+          {/* Recipients card */}
+          <div style={cardStyle}>
+            <SendRecipients
+              fields={fields}
               register={register}
-              watchedCustomChangeAddress={watchedCustomChangeAddress}
-              watchedSplitUTXO={watchedSplitUTXO}
-              calculateUTXOSize={calculateUTXOSize}
-              onOpenCoinControl={openDialog}
+              watchedRecipients={watchedRecipients}
+              onRemove={remove}
+              onUseMaximum={handleUseMaximum}
+              onAddressBookPick={handleAddressBookPick}
+              onSaveToAddressBook={handleSaveToAddressBook}
+              errors={errors}
             />
-          )}
-
-          {/* Recipient Entry Section */}
-          <SendRecipients
-            fields={fields}
-            register={register}
-            watchedRecipients={watchedRecipients}
-            onRemove={remove}
-            onUseMaximum={handleUseMaximum}
-            onAddressBookPick={handleAddressBookPick}
-            onSaveToAddressBook={handleSaveToAddressBook}
-            errors={errors}
-          />
-
-          {/* Fee Section */}
-          <SendFeeControls
-            feeRate={feeRate}
-            sliderPosition={sliderPosition}
-            onSliderChange={handleSliderChange}
-            estimateFeeAvailable={estimateFeeAvailable}
-            onChooseCustomFee={handleChooseCustomFee}
-          />
-
-          {/* Transaction Totals and Warnings */}
-          <SendTransactionTotals
-            transactionTotals={transactionTotals}
-            recipientCount={watchedRecipients.length}
-          />
-
-          {/* Out-of-Sync Warning */}
-          {isOutOfSync && (
-            <div style={{
-              marginBottom: '8px',
-              padding: '10px',
-              border: '1px solid #cc8800',
-              borderRadius: '3px',
-              backgroundColor: '#4a3a00',
-              color: '#ffaa00',
-              fontSize: '12px',
-              textAlign: 'center'
-            }}>
-              {t('send.warnings.outOfSync')}
-            </div>
-          )}
-
-          {/* Form Error Message */}
-          {formError && (
-            <div style={{
-              marginBottom: '8px',
-              padding: '10px',
-              border: '1px solid #cc0000',
-              borderRadius: '3px',
-              backgroundColor: '#4a2a2a',
-              color: '#ff6666',
-              fontSize: '12px',
-              textAlign: 'center'
-            }}>
-              {formError}
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="qt-hbox" style={{
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginTop: '8px'
-          }}>
-            <div className="qt-hbox" style={{ gap: '8px' }}>
-              <button
-                type="submit"
-                className="qt-button-primary"
-                disabled={isSendDisabled}
-                style={{
-                  padding: '6px 16px',
-                  fontSize: '13px',
-                  backgroundColor: isSendDisabled ? '#3a3a3a' : '#5a5a5a',
-                  border: `1px solid ${isSendDisabled ? '#444' : '#666'}`,
-                  borderRadius: '3px',
-                  color: isSendDisabled ? '#888' : '#fff',
-                  cursor: isSendDisabled ? 'not-allowed' : 'pointer',
-                  opacity: isSendDisabled ? 0.7 : 1
-                }}
-              >
-                {t('send.buttons.send').toUpperCase()}
-              </button>
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="qt-button"
-                style={{
-                  padding: '6px 16px',
-                  fontSize: '13px',
-                  backgroundColor: '#404040',
-                  border: '1px solid #555',
-                  borderRadius: '3px',
-                  color: '#ddd',
-                  cursor: 'pointer'
-                }}
-              >
-                {t('send.buttons.clearAll')}
-              </button>
-              <button
-                type="button"
+            <div style={{ marginTop: '12px', display: 'flex' }}>
+              <PillButton
                 onClick={handleAddRecipient}
-                className="qt-button"
-                style={{
-                  padding: '6px 16px',
-                  fontSize: '13px',
-                  backgroundColor: '#404040',
-                  border: '1px solid #555',
-                  borderRadius: '3px',
-                  color: '#ddd',
-                  cursor: 'pointer'
-                }}
-              >
-                {t('send.recipients.add')}
-              </button>
+                disabled={isMaxRecipientsReached}
+                title={isMaxRecipientsReached ? t('send.recipients.maxReached', { max: MAX_RECIPIENTS }) : t('send.recipients.add')}
+                ariaLabel={isMaxRecipientsReached ? t('send.recipients.maxReached', { max: MAX_RECIPIENTS }) : t('send.recipients.add')}
+                icon={<Plus size={12} />}
+                label={t('send.recipients.add')}
+              />
             </div>
+          </div>
 
-            {/* Balance Display */}
-            <div className="qt-label" style={{
-              fontSize: '12px',
-              color: '#999'
+          {/* Fee + Send card */}
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <SendFeeControls
+              feeRate={feeRate}
+              sliderPosition={sliderPosition}
+              onSliderChange={handleSliderChange}
+              estimateFeeAvailable={estimateFeeAvailable}
+              onChooseCustomFee={handleChooseCustomFee}
+            />
+
+            <SendTransactionTotals
+              transactionTotals={transactionTotals}
+              recipientCount={watchedRecipients.length}
+            />
+
+            {isOutOfSync && (
+              <Banner variant="warning" message={t('send.warnings.outOfSync')} />
+            )}
+
+            {formError && (
+              <Banner variant="error" message={formError} />
+            )}
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '8px',
             }}>
-              {t('send.totals.balance', { amount: formatAmount(balance?.spendable || 0) })}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="submit"
+                  disabled={isSendDisabled}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    backgroundColor: isSendDisabled ? '#3a3a3a' : '#4a7c59',
+                    border: `1px solid ${isSendDisabled ? '#444' : '#5a8c69'}`,
+                    borderRadius: '6px',
+                    color: isSendDisabled ? '#888' : '#fff',
+                    cursor: isSendDisabled ? 'not-allowed' : 'pointer',
+                    opacity: isSendDisabled ? 0.7 : 1,
+                  }}
+                >
+                  {t('send.buttons.send').toUpperCase()}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    backgroundColor: '#383838',
+                    border: '1px solid #4a4a4a',
+                    borderRadius: '6px',
+                    color: '#ccc',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {t('send.buttons.clearAll')}
+                </button>
+              </div>
+
+              <div style={{ fontSize: '12px', color: '#999' }}>
+                {t('send.totals.balance', { amount: formatAmount(balance?.spendable || 0) })}
+              </div>
+            </div>
             </div>
           </div>
         </form>

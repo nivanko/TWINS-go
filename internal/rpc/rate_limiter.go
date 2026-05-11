@@ -159,11 +159,28 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-// extractIP extracts the client IP address from an HTTP request.
+// extractIP extracts the client IP address from an HTTP request,
+// normalizing IPv6 addresses to /64 prefix for rate limiting.
 func extractIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		return normalizeIP(r.RemoteAddr)
 	}
-	return host
+	return normalizeIP(host)
+}
+
+// normalizeIP masks IPv6 addresses to /64 prefix for rate limiting.
+// An attacker with a single /64 allocation can rotate through 2^64 addresses;
+// keying on the full /128 would let them trivially bypass per-IP limits.
+// IPv4 addresses are returned as-is.
+func normalizeIP(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+	if parsed.To4() != nil {
+		return ip
+	}
+	// IPv6: mask to /64 so all addresses in the same allocation share a bucket
+	return parsed.Mask(net.CIDRMask(64, 128)).String()
 }

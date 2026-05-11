@@ -6,7 +6,7 @@ import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
 import { RefreshCountdown } from '@/shared/components/RefreshCountdown';
 import { UnlockWalletDialog } from '@/features/wallet/components/UnlockWalletDialog';
 import { sanitizeErrorMessage } from '@/shared/utils/sanitize';
-import { GetMyMasternodes, StartMasternode, StartAllMasternodes, StartMissingMasternodes, GetNetworkMasternodes, GetMasternodeStatistics } from '@wailsjs/go/main/App';
+import { GetMyMasternodes, StartMasternode, StartAllMasternodes, StartMissingMasternodes, GetNetworkMasternodes, GetMasternodeStatistics, IsDebugCollectorActive } from '@wailsjs/go/main/App';
 import { useWalletAction } from '@/shared/hooks/useWalletAction';
 import { EventsOn, EventsOff } from '@wailsjs/runtime/runtime';
 import {
@@ -136,6 +136,13 @@ export const MasternodesPage: React.FC = () => {
 
   // Setup wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
+
+  // Whether the masternode debug subsystem is enabled in twinsd.yml.
+  // Controls visibility of the Debug tab. Synced on mount and updated live via
+  // the masternode:debug-changed Wails event emitted from app.go's ConfigManager
+  // subscriber, so toggling masternode.debug from the Options dialog re-renders
+  // the tab without a daemon restart.
+  const [debugEnabled, setDebugEnabled] = useState<boolean>(false);
 
   // Wallet unlock hook (matches legacy masternodelist.cpp:265-280)
   const { showUnlockDialog, executeWithUnlock, unlockDialogProps } = useWalletAction({
@@ -296,6 +303,45 @@ export const MasternodesPage: React.FC = () => {
       EventsOff('masternode:updated');
     };
   }, []); // Empty deps - event subscription runs once
+
+  // Sync the Debug tab gate from the EFFECTIVE collector state on mount and on
+  // live changes. IsDebugCollectorActive returns whether the collector is
+  // actually running (Node.DebugCollector pointer non-nil), not the raw config
+  // value — collector startup can fail (e.g. read-only data directory) and we
+  // must not advertise a Debug tab whose backend never started. The Wails
+  // event masternode:debug-changed reports the same effective state on live
+  // toggles, so the tab appears or disappears without requiring a daemon
+  // restart.
+  useEffect(() => {
+    let mounted = true;
+    IsDebugCollectorActive()
+      .then((v: boolean) => {
+        if (mounted) setDebugEnabled(v);
+      })
+      .catch((err) => {
+        console.error('Failed to read masternode debug collector state:', err);
+      });
+    EventsOn('masternode:debug-changed', (enabled: boolean) => {
+      if (mounted) setDebugEnabled(enabled);
+    });
+    return () => {
+      mounted = false;
+      // EventsOff removes ALL handlers for this event globally. Today this
+      // page is the only subscriber, matching the existing pattern used a few
+      // lines above for masternode:updated. If a future component listens
+      // for masternode:debug-changed, both will need to switch to per-handler
+      // cleanup using the function returned by EventsOn.
+      EventsOff('masternode:debug-changed');
+    };
+  }, []);
+
+  // If the Debug tab becomes hidden while the user is viewing it, fall back
+  // to the My Masternodes tab so the page never lands on a non-rendered tab.
+  useEffect(() => {
+    if (!debugEnabled && masternodeActiveTab === 'debug') {
+      setMasternodeActiveTab('my');
+    }
+  }, [debugEnabled, masternodeActiveTab, setMasternodeActiveTab]);
 
   // Auto-clear success/error messages after 5 seconds
   useEffect(() => {
@@ -536,22 +582,24 @@ export const MasternodesPage: React.FC = () => {
           >
             {t('tabs.paymentStats')}
           </button>
-          <button
-            onClick={() => setMasternodeActiveTab('debug')}
-            style={{
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: masternodeActiveTab === 'debug' ? 'bold' : 'normal',
-              backgroundColor: masternodeActiveTab === 'debug' ? '#3a3a3a' : 'transparent',
-              color: masternodeActiveTab === 'debug' ? '#fff' : '#999',
-              border: 'none',
-              borderBottom: masternodeActiveTab === 'debug' ? '2px solid #4a8af4' : '2px solid transparent',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-          >
-            Debug
-          </button>
+          {debugEnabled && (
+            <button
+              onClick={() => setMasternodeActiveTab('debug')}
+              style={{
+                padding: '8px 16px',
+                fontSize: '12px',
+                fontWeight: masternodeActiveTab === 'debug' ? 'bold' : 'normal',
+                backgroundColor: masternodeActiveTab === 'debug' ? '#3a3a3a' : 'transparent',
+                color: masternodeActiveTab === 'debug' ? '#fff' : '#999',
+                border: 'none',
+                borderBottom: masternodeActiveTab === 'debug' ? '2px solid #4a8af4' : '2px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              Debug
+            </button>
+          )}
         </div>
 
         {/* Success/Error Messages (only show on My Masternodes tab) */}
@@ -674,7 +722,7 @@ export const MasternodesPage: React.FC = () => {
         )}
 
         {/* Debug Tab Content */}
-        {masternodeActiveTab === 'debug' && (
+        {debugEnabled && masternodeActiveTab === 'debug' && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <MasternodeDebugPanel />
           </div>

@@ -23,6 +23,7 @@ interface StatusBarProps {
   isHD?: boolean;
   initialized?: boolean;
   isTor?: boolean;
+  isMultisendActive?: boolean;
   displayUnit?: number;
   /** Called when the lock icon is clicked (encrypted wallets only) */
   onLockClick?: (e: React.MouseEvent) => void;
@@ -47,6 +48,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   isHD = false,
   initialized = false,
   isTor = false,
+  isMultisendActive = false,
   displayUnit = 0,
   onLockClick,
   onEncryptClick,
@@ -283,7 +285,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         )}
 
         {/* Staking status */}
-        <div className="flex items-center" title={isStaking ? t('statusBar.stakingActive') : t('statusBar.stakingInactive')}>
+        <div className="flex items-center" title={`${isStaking ? t('statusBar.stakingActive') : t('statusBar.stakingInactive')}\n${t('statusBar.multisend')}: ${isMultisendActive ? t('statusBar.multisendActive') : t('statusBar.multisendNotActive')}`}>
           <img
             src={isStaking ? "/icons/status/staking_active.png" : "/icons/status/staking_inactive.png"}
             alt={isStaking ? t('statusBar.stakingActive') : t('statusBar.stakingInactive')}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatAmountDisplay } from '@/utils/amountValidation';
+import { Banner } from '@/shared/components/Banner';
 
 interface TransactionTotals {
   recipientsTotal: number;
@@ -14,79 +15,57 @@ export interface SendTransactionTotalsProps {
   recipientCount: number;
 }
 
+const labelStyle: React.CSSProperties = { fontSize: '11px', color: '#888' };
+const valueStyle: React.CSSProperties = { fontSize: '12px', color: '#ddd' };
+const rowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+};
+
 export const SendTransactionTotals: React.FC<SendTransactionTotalsProps> = ({
   transactionTotals,
   recipientCount,
 }) => {
   return (
     <>
-      {/* Multi-Recipient Info */}
       {recipientCount > 1 && (
-        <div className="qt-frame-secondary" style={{
-          marginBottom: '8px',
-          padding: '8px',
-          border: '1px solid #4a7a4a',
-          borderRadius: '2px',
-          backgroundColor: '#3a4a3a'
-        }}>
-          <div className="qt-hbox" style={{ gap: '8px', alignItems: 'center' }}>
-            <span className="qt-label" style={{ fontSize: '11px', color: '#88cc88' }}>
-              Sending to {recipientCount} recipients in a single transaction.
-            </span>
-          </div>
-        </div>
+        <Banner
+          variant="info"
+          message={`Sending to ${recipientCount} recipients in a single transaction.`}
+        />
       )}
 
-      {/* Transaction Totals Display */}
       {transactionTotals && transactionTotals.recipientsTotal > 0 && (
-        <div className="qt-frame-secondary" style={{
-          marginBottom: '8px',
-          padding: '8px',
-          border: '1px solid #4a4a4a',
-          borderRadius: '2px',
-          backgroundColor: transactionTotals.canSend ? '#3a3a3a' : '#4a2a2a'
-        }}>
-          <div className="qt-vbox" style={{ gap: '4px' }}>
-            <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="qt-label" style={{ fontSize: '12px' }}>Recipients Total:</span>
-              <span className="qt-label" style={{ fontSize: '12px', fontWeight: 'bold' }}>
-                {formatAmountDisplay(transactionTotals.recipientsTotal)}
-              </span>
-            </div>
-            <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="qt-label" style={{ fontSize: '12px' }}>Estimated Fee:</span>
-              <span className="qt-label" style={{ fontSize: '12px' }}>
-                {formatAmountDisplay(transactionTotals.estimatedFee)}
-              </span>
-            </div>
-            <div style={{ borderTop: '1px solid #555', margin: '4px 0' }} />
-            <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="qt-label" style={{ fontSize: '12px', fontWeight: 'bold' }}>Grand Total:</span>
-              <span className="qt-label" style={{
-                fontSize: '12px',
-                fontWeight: 'bold',
-                color: transactionTotals.canSend ? '#00ff00' : '#ff6666'
-              }}>
-                {formatAmountDisplay(transactionTotals.grandTotal)}
-              </span>
-            </div>
-            <div className="qt-hbox" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="qt-label" style={{ fontSize: '11px', color: '#999' }}>Remaining Balance:</span>
-              <span className="qt-label" style={{ fontSize: '11px', color: '#999' }}>
-                {formatAmountDisplay(transactionTotals.remainingBalance)}
-              </span>
-            </div>
-            {!transactionTotals.canSend && (
-              <div className="qt-label" style={{
-                fontSize: '11px',
-                color: '#ff6666',
-                textAlign: 'center',
-                marginTop: '4px'
-              }}>
-                Insufficient balance for this transaction
-              </div>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={rowStyle}>
+            <span style={labelStyle}>Recipients Total:</span>
+            <span style={valueStyle}>{formatAmountDisplay(transactionTotals.recipientsTotal)}</span>
           </div>
+          <div style={rowStyle}>
+            <span style={labelStyle}>Estimated Fee:</span>
+            <span style={valueStyle}>{formatAmountDisplay(transactionTotals.estimatedFee)}</span>
+          </div>
+          <div style={{ borderTop: '1px solid #3a3a3a', margin: '4px 0' }} />
+          <div style={rowStyle}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#ddd' }}>Grand Total:</span>
+            <span
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: transactionTotals.canSend ? '#27ae60' : '#ff6666',
+              }}
+            >
+              {formatAmountDisplay(transactionTotals.grandTotal)}
+            </span>
+          </div>
+          <div style={rowStyle}>
+            <span style={labelStyle}>Remaining Balance:</span>
+            <span style={labelStyle}>{formatAmountDisplay(transactionTotals.remainingBalance)}</span>
+          </div>
+          {!transactionTotals.canSend && (
+            <Banner variant="error" message="Insufficient balance for this transaction" />
+          )}
         </div>
       )}
     </>

@@ -16,7 +16,6 @@ export const CustomFeeDialog: React.FC<CustomFeeDialogProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Reset input when dialog opens
   useEffect(() => {
     if (isOpen) {
       setInputValue(currentFeeRate.toFixed(8));
@@ -50,55 +49,61 @@ export const CustomFeeDialog: React.FC<CustomFeeDialogProps> = ({
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-    }}>
-      <div style={{
-        backgroundColor: '#3a3a3a',
-        border: '1px solid #555',
-        borderRadius: '4px',
-        padding: '16px',
-        minWidth: '320px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-      }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#ddd' }}>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: '#2f2f2f',
+          border: '1px solid #3a3a3a',
+          borderRadius: '8px',
+          padding: '20px',
+          minWidth: '320px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div style={{ fontSize: '13px', fontWeight: 600, color: '#ccc', marginBottom: '16px' }}>
           Custom Fee Rate
-        </h3>
+        </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>
             Fee Rate (TWINS/kB):
           </label>
           <input
             type="text"
             value={inputValue}
-            onChange={(e) => { setInputValue(e.target.value); setError(null); }}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              setError(null);
+            }}
             onKeyDown={handleKeyDown}
             autoFocus
             style={{
               width: '100%',
-              padding: '8px',
-              backgroundColor: '#2a2a2a',
-              border: error ? '1px solid #c00' : '1px solid #555',
-              borderRadius: '2px',
+              padding: '7px 10px',
+              backgroundColor: '#252525',
+              border: error ? '1px solid #ff6666' : '1px solid #3a3a3a',
+              borderRadius: '4px',
               color: '#ddd',
-              fontSize: '13px',
+              fontSize: '12px',
+              outline: 'none',
               boxSizing: 'border-box',
             }}
           />
           {error && (
-            <div style={{ color: '#f66', fontSize: '11px', marginTop: '4px' }}>
-              {error}
-            </div>
+            <div style={{ color: '#ff6666', fontSize: '11px', marginTop: '4px' }}>{error}</div>
           )}
         </div>
 
@@ -110,11 +115,11 @@ export const CustomFeeDialog: React.FC<CustomFeeDialogProps> = ({
           <button
             onClick={onClose}
             style={{
-              padding: '6px 16px',
-              backgroundColor: '#4a4a4a',
-              border: '1px solid #555',
-              borderRadius: '2px',
-              color: '#ddd',
+              padding: '8px 16px',
+              backgroundColor: '#383838',
+              border: '1px solid #4a4a4a',
+              borderRadius: '6px',
+              color: '#ccc',
               cursor: 'pointer',
               fontSize: '12px',
             }}
@@ -124,13 +129,14 @@ export const CustomFeeDialog: React.FC<CustomFeeDialogProps> = ({
           <button
             onClick={handleConfirm}
             style={{
-              padding: '6px 16px',
-              backgroundColor: '#0066cc',
-              border: '1px solid #0055aa',
-              borderRadius: '2px',
+              padding: '8px 16px',
+              backgroundColor: '#4a7c59',
+              border: '1px solid #5a8c69',
+              borderRadius: '6px',
               color: '#fff',
               cursor: 'pointer',
               fontSize: '12px',
+              fontWeight: 500,
             }}
           >
             OK

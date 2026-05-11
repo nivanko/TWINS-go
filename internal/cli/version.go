@@ -7,7 +7,7 @@ import (
 
 // Version information - these will be set at build time using ldflags
 var (
-	Version         = "4.0.41"
+	Version         = "4.0.42"
 	GitCommit       = "unknown"
 	BuildDate       = "unknown"
 	DatabaseVersion = "unknown"

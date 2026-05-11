@@ -1298,6 +1298,7 @@ export namespace debug {
 	    broadcastAccepted: number;
 	    broadcastRejected: number;
 	    broadcastDedup: number;
+	    broadcastSkipped: number;
 	    acceptRate: number;
 	    rejectReasons: ReasonCount[];
 	    uniqueMasternodes: number;
@@ -1306,6 +1307,7 @@ export namespace debug {
 	    pingReceived: number;
 	    pingAccepted: number;
 	    pingFailed: number;
+	    pingSkipped: number;
 	    pingAcceptRate: number;
 	    activePingsSent: number;
 	    activePingsSuccess: number;
@@ -1337,6 +1339,7 @@ export namespace debug {
 	        this.broadcastAccepted = source["broadcastAccepted"];
 	        this.broadcastRejected = source["broadcastRejected"];
 	        this.broadcastDedup = source["broadcastDedup"];
+	        this.broadcastSkipped = source["broadcastSkipped"];
 	        this.acceptRate = source["acceptRate"];
 	        this.rejectReasons = this.convertValues(source["rejectReasons"], ReasonCount);
 	        this.uniqueMasternodes = source["uniqueMasternodes"];
@@ -1345,6 +1348,7 @@ export namespace debug {
 	        this.pingReceived = source["pingReceived"];
 	        this.pingAccepted = source["pingAccepted"];
 	        this.pingFailed = source["pingFailed"];
+	        this.pingSkipped = source["pingSkipped"];
 	        this.pingAcceptRate = source["pingAcceptRate"];
 	        this.activePingsSent = source["activePingsSent"];
 	        this.activePingsSuccess = source["activePingsSuccess"];
@@ -1564,6 +1568,48 @@ export namespace main {
 	        this.summary = source["summary"];
 	        this.payload = source["payload"];
 	    }
+	}
+	export class DebugEventsPage {
+	    events: DebugEvent[];
+	    totalMatched: number;
+	    totalScanned: number;
+	    byCategory: Record<string, number>;
+	    truncated: boolean;
+	    filesScanned: number;
+	    fileSize: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DebugEventsPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.events = this.convertValues(source["events"], DebugEvent);
+	        this.totalMatched = source["totalMatched"];
+	        this.totalScanned = source["totalScanned"];
+	        this.byCategory = source["byCategory"];
+	        this.truncated = source["truncated"];
+	        this.filesScanned = source["filesScanned"];
+	        this.fileSize = source["fileSize"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class DebugFilter {
 	    category?: string;

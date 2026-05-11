@@ -49,6 +49,7 @@ export interface DebugSummary {
   broadcastAccepted: number;
   broadcastRejected: number;
   broadcastDedup: number;
+  broadcastSkipped: number;
   acceptRate: number;
   rejectReasons: ReasonCount[];
   uniqueMasternodes: number;
@@ -57,6 +58,7 @@ export interface DebugSummary {
   pingReceived: number;
   pingAccepted: number;
   pingFailed: number;
+  pingSkipped: number;
   pingAcceptRate: number;
   activePingsSent: number;
   activePingsSuccess: number;
@@ -81,21 +83,23 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 };
 
-const formatDate = (iso: string): string => {
+const formatTimeOnly = (iso: string): string => {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
+
+const formatDateTime = (iso: string): string => {
   if (!iso) return '-';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-const formatTimeOnly = (iso: string): string => {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 };
 
 const formatRate = (rate: number): string => {
@@ -130,9 +134,26 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
     );
   }
 
-  const hasBroadcast = summary.broadcastReceived > 0 || summary.broadcastAccepted > 0;
-  const hasPing = summary.pingReceived > 0 || summary.pingAccepted > 0 || summary.activePingsSent > 0;
-  const hasNetwork = summary.dsegRequests > 0 || summary.networkMNBCount > 0 || summary.uniquePeers > 0;
+  // Each `hasX` predicate gates the body of its card under the
+  // always-render-with-EmptyState pattern. To avoid the EmptyState
+  // misreporting "No X activity yet" while the body would render non-zero
+  // values, every predicate must include every counter that the corresponding
+  // card body actually displays.
+  //
+  // The 6 cards in the 3×2 grid are: Broadcast Counts, Ping Health,
+  // Network Activity, Rejections & Sources, Active MN Pings, Status & Sync.
+  // Broadcast Health was split into Broadcast Counts (counters/rate/tier) and
+  // Rejections & Sources (top rejection reasons + top sources). Ping Health
+  // was split into Ping Health (incoming counters) and Active MN Pings
+  // (outgoing pings sent/OK/failed).
+  //
+  // `*Skipped` counters exist on DebugSummary but are NOT rendered in any
+  // card body, so they are intentionally excluded from the gates.
+  const hasBroadcastCounts = summary.broadcastReceived > 0 || summary.broadcastAccepted > 0 || summary.broadcastRejected > 0 || summary.broadcastDedup > 0;
+  const hasRejectionsSources = summary.rejectReasons.length > 0 || summary.topSources.length > 0;
+  const hasPing = summary.pingReceived > 0 || summary.pingAccepted > 0 || summary.pingFailed > 0;
+  const hasActivePings = summary.activePingsSent > 0;
+  const hasNetwork = summary.networkMNBCount > 0 || summary.networkMNPCount > 0 || summary.dsegRequests > 0 || summary.dsegResponses > 0 || summary.uniquePeers > 0;
   const hasStatus = summary.syncTransitions.length > 0 || summary.statusChanges.length > 0 || summary.activeMNChanges.length > 0;
 
   return (
@@ -140,18 +161,24 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
       {/* Overview bar */}
       <div style={{
         display: 'flex',
-        gap: '12px',
+        gap: '16px',
+        alignItems: 'center',
         flexWrap: 'wrap',
         marginBottom: '12px',
-        padding: '8px 12px',
-        backgroundColor: '#2b2b2b',
-        borderRadius: '4px',
+        padding: '12px 16px',
+        backgroundColor: '#2f2f2f',
+        borderRadius: '8px',
         border: '1px solid #3a3a3a',
       }}>
         <OverviewStatDateTime label="Time range" firstEvent={summary.firstEvent} lastEvent={summary.lastEvent} />
+        <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: '#3a3a3a' }} />
         <OverviewStat label="Total events" value={summary.totalEvents.toLocaleString()} />
         <OverviewStat label="Log size" value={formatFileSize(summary.fileSize)} />
+        <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: '#3a3a3a' }} />
         <OverviewStat label="Sessions" value={String(summary.sessionCount)} />
+        {(hasNetwork || hasBroadcastCounts) && (
+          <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: '#3a3a3a' }} />
+        )}
         {hasNetwork && (
           <OverviewStat
             label="Unique peers"
@@ -159,7 +186,7 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
             onClick={summary.peerDetails?.length > 0 ? () => setShowPeersDialog(true) : undefined}
           />
         )}
-        {hasBroadcast && (
+        {hasBroadcastCounts && (
           <OverviewStat
             label="Unique MNs"
             value={summary.uniqueMasternodes.toLocaleString()}
@@ -174,21 +201,22 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
         gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
         gap: '10px',
       }}>
-        {/* Broadcast Health card */}
-        {hasBroadcast && (
-          <DashboardCard title="Broadcast Health" color={CATEGORY_COLORS.broadcast}>
+        {/* Card 1: Broadcast Counts */}
+        <DashboardCard title="Broadcast Counts" color={CATEGORY_COLORS.broadcast}>
+          {hasBroadcastCounts ? (
+            <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
               <StatRow label="Received" value={summary.broadcastReceived.toLocaleString()} />
               <StatRow label="Accepted" value={summary.broadcastAccepted.toLocaleString()} valueColor="#4caf50" />
               <StatRow label="Rejected" value={summary.broadcastRejected.toLocaleString()} valueColor={summary.broadcastRejected > 0 ? '#ff6666' : undefined} />
               <StatRow label="Dedup" value={summary.broadcastDedup.toLocaleString()} />
             </div>
-            <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '6px' }}>
+            <div style={{ marginTop: '6px', borderTop: '1px solid #3a3a3a', paddingTop: '6px' }}>
               <StatRow label="Accept rate" value={formatRate(summary.acceptRate)} valueColor={summary.acceptRate >= 90 ? '#4caf50' : summary.acceptRate >= 70 ? '#f0c040' : '#ff6666'} />
             </div>
 
             {Object.keys(summary.tierBreakdown).length > 0 && (
-              <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '4px' }}>
+              <div style={{ marginTop: '6px', borderTop: '1px solid #3a3a3a', paddingTop: '4px' }}>
                 <SubLabel>Tier breakdown</SubLabel>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '2px' }}>
                   {Object.entries(summary.tierBreakdown)
@@ -202,52 +230,30 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
                 </div>
               </div>
             )}
+            </>
+          ) : (
+            <EmptyState message="No broadcast activity yet" />
+          )}
+        </DashboardCard>
 
-            {summary.rejectReasons.length > 0 && (
-              <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '4px' }}>
-                <SubLabel>Top rejection reasons</SubLabel>
-                {summary.rejectReasons.slice(0, 5).map((r, i) => (
-                  <StatRow key={i} label={truncate(r.label, 40)} value={String(r.count)} valueColor="#ff6666" />
-                ))}
-              </div>
-            )}
-
-            {summary.topSources.length > 0 && (
-              <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '4px' }}>
-                <SubLabel>Top sources</SubLabel>
-                {summary.topSources.map((s, i) => (
-                  <StatRow key={i} label={s.source} value={String(s.count)} />
-                ))}
-              </div>
-            )}
-          </DashboardCard>
-        )}
-
-        {/* Ping Health card */}
-        {hasPing && (
-          <DashboardCard title="Ping Health" color={CATEGORY_COLORS.ping}>
+        {/* Card 2: Ping Health */}
+        <DashboardCard title="Ping Health" color={CATEGORY_COLORS.ping}>
+          {hasPing ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
               <StatRow label="Received" value={summary.pingReceived.toLocaleString()} />
               <StatRow label="Accepted" value={summary.pingAccepted.toLocaleString()} valueColor="#4caf50" />
               <StatRow label="Failed" value={summary.pingFailed.toLocaleString()} valueColor={summary.pingFailed > 0 ? '#ff6666' : undefined} />
               <StatRow label="Accept rate" value={formatRate(summary.pingAcceptRate)} />
             </div>
-            {summary.activePingsSent > 0 && (
-              <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '4px' }}>
-                <SubLabel>Active MN pings</SubLabel>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
-                  <StatRow label="Sent" value={String(summary.activePingsSent)} />
-                  <StatRow label="OK" value={String(summary.activePingsSuccess)} valueColor="#4caf50" />
-                  <StatRow label="Failed" value={String(summary.activePingsFailed)} valueColor={summary.activePingsFailed > 0 ? '#ff6666' : undefined} />
-                </div>
-              </div>
-            )}
-          </DashboardCard>
-        )}
+          ) : (
+            <EmptyState message="No ping activity yet" />
+          )}
+        </DashboardCard>
 
-        {/* Network Activity card */}
-        {hasNetwork && (
-          <DashboardCard title="Network Activity" color={CATEGORY_COLORS.network}>
+        {/* Card 3: Network Activity */}
+        <DashboardCard title="Network Activity" color={CATEGORY_COLORS.network}>
+          {hasNetwork ? (
+            <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
               <StatRow label="MNB from network" value={summary.networkMNBCount.toLocaleString()} />
               <StatRow label="MNP from network" value={summary.networkMNPCount.toLocaleString()} />
@@ -259,12 +265,65 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
                 <StatRow label="Avg MNs served per DSEG" value={summary.avgMNsServed.toFixed(0)} />
               </div>
             )}
-          </DashboardCard>
-        )}
+            </>
+          ) : (
+            <EmptyState message="No network activity yet" />
+          )}
+        </DashboardCard>
 
-        {/* Status & Sync card */}
-        {hasStatus && (
-          <DashboardCard title="Status & Sync" color={CATEGORY_COLORS.sync}>
+        {/* Card 4: Rejections & Sources (split out from former Broadcast Health card) */}
+        <DashboardCard title="Rejections & Sources" color={CATEGORY_COLORS.status}>
+          {hasRejectionsSources ? (
+            <>
+            {summary.rejectReasons.length > 0 && (
+              <div>
+                <SubLabel>Top rejection reasons</SubLabel>
+                {summary.rejectReasons.slice(0, 5).map((r, i) => (
+                  // Wrap the truncated label in a <span title={r.label}> so the
+                  // full untruncated reason is visible on hover. Without this,
+                  // long reasons like "add_or_update_failed: collateral_tx_not_found"
+                  // are silently cut at 40 chars (F-2 from the research audit).
+                  <StatRow
+                    key={i}
+                    label={<span title={r.label}>{truncate(r.label, 40)}</span>}
+                    value={String(r.count)}
+                    valueColor="#ff6666"
+                  />
+                ))}
+              </div>
+            )}
+
+            {summary.topSources.length > 0 && (
+              <div style={{ marginTop: summary.rejectReasons.length > 0 ? '6px' : 0, borderTop: summary.rejectReasons.length > 0 ? '1px solid #3a3a3a' : 'none', paddingTop: summary.rejectReasons.length > 0 ? '4px' : 0 }}>
+                <SubLabel>Top sources</SubLabel>
+                {summary.topSources.map((s, i) => (
+                  <StatRow key={i} label={s.source} value={String(s.count)} />
+                ))}
+              </div>
+            )}
+            </>
+          ) : (
+            <EmptyState message="No rejections or sources yet" />
+          )}
+        </DashboardCard>
+
+        {/* Card 5: Active MN Pings (split out from former Ping Health card) */}
+        <DashboardCard title="Active MN Pings" color={CATEGORY_COLORS.active}>
+          {hasActivePings ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
+              <StatRow label="Sent" value={String(summary.activePingsSent)} />
+              <StatRow label="OK" value={String(summary.activePingsSuccess)} valueColor="#4caf50" />
+              <StatRow label="Failed" value={String(summary.activePingsFailed)} valueColor={summary.activePingsFailed > 0 ? '#ff6666' : undefined} />
+            </div>
+          ) : (
+            <EmptyState message="No active masternode pings yet" />
+          )}
+        </DashboardCard>
+
+        {/* Card 6: Status & Sync */}
+        <DashboardCard title="Status & Sync" color={CATEGORY_COLORS.sync}>
+          {hasStatus ? (
+            <>
             {summary.syncTransitions.length > 0 && (
               <div>
                 <SubLabel>Sync transitions</SubLabel>
@@ -282,7 +341,7 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
             )}
 
             {summary.statusChanges.length > 0 && (
-              <div style={{ marginTop: summary.syncTransitions.length > 0 ? '6px' : 0, borderTop: summary.syncTransitions.length > 0 ? '1px solid #333' : 'none', paddingTop: summary.syncTransitions.length > 0 ? '4px' : 0 }}>
+              <div style={{ marginTop: summary.syncTransitions.length > 0 ? '6px' : 0, borderTop: summary.syncTransitions.length > 0 ? '1px solid #3a3a3a' : 'none', paddingTop: summary.syncTransitions.length > 0 ? '4px' : 0 }}>
                 <SubLabel>Status changes</SubLabel>
                 {summary.statusChanges.map((s, i) => (
                   <StatRow key={i} label={truncate(s.label, 35)} value={String(s.count)} valueColor="#b070d0" />
@@ -291,7 +350,7 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
             )}
 
             {summary.activeMNChanges.length > 0 && (
-              <div style={{ marginTop: '6px', borderTop: '1px solid #333', paddingTop: '4px' }}>
+              <div style={{ marginTop: '6px', borderTop: '1px solid #3a3a3a', paddingTop: '4px' }}>
                 <SubLabel>Active MN changes</SubLabel>
                 {summary.activeMNChanges.map((t, i) => (
                   <div key={i} style={{ fontSize: '10px', color: '#aaa', padding: '1px 0' }}>
@@ -303,14 +362,21 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
                 ))}
               </div>
             )}
-          </DashboardCard>
-        )}
+            </>
+          ) : (
+            <EmptyState message="No state transitions yet" />
+          )}
+        </DashboardCard>
       </div>
 
       {/* Peer Details Dialog */}
       {showPeersDialog && (
         <DetailDialog
-          title={`Unique Peers (${summary.peerDetails?.length || 0})`}
+          title={`Unique Peers (${summary.uniquePeers})${
+            (summary.peerDetails?.length ?? 0) < summary.uniquePeers
+              ? ` — showing top ${summary.peerDetails?.length ?? 0}`
+              : ''
+          }`}
           onClose={() => setShowPeersDialog(false)}
         >
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
@@ -337,7 +403,11 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
       {/* Masternode Details Dialog */}
       {showMNsDialog && (
         <DetailDialog
-          title={`Unique Masternodes (${summary.masternodeDetails?.length || 0})`}
+          title={`Unique Masternodes (${summary.uniqueMasternodes})${
+            (summary.masternodeDetails?.length ?? 0) < summary.uniqueMasternodes
+              ? ` — showing top ${summary.masternodeDetails?.length ?? 0}`
+              : ''
+          }`}
           onClose={() => setShowMNsDialog(false)}
         >
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
@@ -369,32 +439,33 @@ export const DebugOverviewPanel: React.FC<DebugOverviewProps> = ({ summary }) =>
 // --- Sub-components ---
 
 const OverviewStatDateTime: React.FC<{ label: string; firstEvent: string; lastEvent: string }> = ({ label, firstEvent, lastEvent }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-    <span style={{ fontSize: '9px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
-    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <span style={{ fontSize: '12px', color: '#ddd', fontFamily: 'monospace' }}>{formatTimeOnly(firstEvent)}</span>
-        <span style={{ fontSize: '10px', color: '#ddd', fontFamily: 'monospace' }}>{formatDate(firstEvent)}</span>
-      </div>
-      <span style={{ fontSize: '12px', color: '#666' }}>—</span>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <span style={{ fontSize: '12px', color: '#ddd', fontFamily: 'monospace' }}>{formatTimeOnly(lastEvent)}</span>
-        <span style={{ fontSize: '10px', color: '#ddd', fontFamily: 'monospace' }}>{formatDate(lastEvent)}</span>
-      </div>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+    <span style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+    <div style={{ fontSize: '14px', color: '#ddd', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span>{formatDateTime(firstEvent)}</span>
+      <span style={{ color: '#666' }}>→</span>
+      <span>{formatDateTime(lastEvent)}</span>
     </div>
   </div>
 );
 
 const OverviewStat: React.FC<{ label: string; value: string; onClick?: () => void }> = ({ label, value, onClick }) => (
   <div
-    style={{ display: 'flex', flexDirection: 'column', gap: '1px', cursor: onClick ? 'pointer' : 'default' }}
+    style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: onClick ? 'pointer' : 'default' }}
     onClick={onClick}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick();
+      }
+    } : undefined}
   >
-    <span style={{ fontSize: '9px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+    <span style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
     <span style={{
-      fontSize: '12px',
-      color: onClick ? '#4a8af4' : '#ddd',
-      fontFamily: 'monospace',
+      fontSize: '14px',
+      color: onClick ? '#6699cc' : '#ddd',
       textDecoration: onClick ? 'underline' : 'none',
     }}>{value}</span>
   </div>
@@ -402,17 +473,17 @@ const OverviewStat: React.FC<{ label: string; value: string; onClick?: () => voi
 
 const DashboardCard: React.FC<{ title: string; color: string; children: React.ReactNode }> = ({ title, color, children }) => (
   <div style={{
-    backgroundColor: '#252525',
+    backgroundColor: '#2f2f2f',
     border: '1px solid #3a3a3a',
-    borderRadius: '4px',
-    borderTop: `2px solid ${color}`,
-    padding: '10px 12px',
+    borderRadius: '8px',
+    borderLeft: `3px solid ${color}`,
+    padding: '16px',
   }}>
     <div style={{
-      fontSize: '11px',
-      fontWeight: 'bold',
+      fontSize: '13px',
+      fontWeight: 600,
       color: color,
-      marginBottom: '6px',
+      marginBottom: '8px',
     }}>
       {title}
     </div>
@@ -420,11 +491,29 @@ const DashboardCard: React.FC<{ title: string; color: string; children: React.Re
   </div>
 );
 
-const SubLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>{children}</div>
+const EmptyState: React.FC<{ message: string }> = ({ message }) => (
+  <div style={{
+    fontSize: '11px',
+    color: '#666',
+    fontStyle: 'italic',
+    padding: '8px 0',
+    textAlign: 'center',
+  }}>
+    {message}
+  </div>
 );
 
-const StatRow: React.FC<{ label: string; value: string; valueColor?: string }> = ({ label, value, valueColor }) => (
+const SubLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{
+    fontSize: '11px',
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '4px',
+  }}>{children}</div>
+);
+
+const StatRow: React.FC<{ label: React.ReactNode; value: string; valueColor?: string }> = ({ label, value, valueColor }) => (
   <div style={{
     display: 'flex',
     justifyContent: 'space-between',
@@ -432,7 +521,7 @@ const StatRow: React.FC<{ label: string; value: string; valueColor?: string }> =
     padding: '1px 0',
   }}>
     <span style={{ color: '#888' }}>{label}</span>
-    <span style={{ color: valueColor || '#ccc', fontFamily: 'monospace', fontSize: '10px' }}>{value}</span>
+    <span style={{ color: valueColor || '#ccc', fontFamily: 'monospace', fontSize: '12px' }}>{value}</span>
   </div>
 );
 

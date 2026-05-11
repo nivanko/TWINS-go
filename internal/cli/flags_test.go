@@ -58,7 +58,8 @@ func TestCommonRPCClientFlags(t *testing.T) {
 		"rpc-password",
 		"rpc-timeout",
 		"rpc-tls",
-		"rpc-cert",
+		"rpc-tls-ca",
+		"rpc-tls-pin",
 	}
 
 	for _, expected := range expectedFlags {

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useReceive } from '@/store/useStore';
-import { Copy, RefreshCw, ChevronDown, Eye, Trash2, ExternalLink, Download } from 'lucide-react';
+import { Copy, RefreshCw, ChevronDown, Eye, Trash2, List, Download } from 'lucide-react';
 import { sanitizeText } from '@/shared/utils/sanitize';
 import { useDisplayUnits } from '@/shared/hooks/useDisplayUnits';
 import { buildTwinsURI, MAX_QR_DATA_LENGTH } from '@/shared/utils/twinsUri';
@@ -12,7 +12,15 @@ import { SaveQRImage } from '@wailsjs/go/main/App';
 import { createCircularLogoDataURL } from '@/shared/utils/qrLogo';
 import { buildQRFilename } from '@/shared/utils/qrFilename';
 import { SimpleConfirmDialog } from '@/shared/components/SimpleConfirmDialog';
+import { IconButton } from '@/shared/components/IconButton';
+import { PillButton } from '@/shared/components/PillButton';
+import { Banner } from '@/shared/components/Banner';
 import { ReceivingAddressesDialog, RequestPaymentDialog } from '@/components/dialogs';
+
+// Card padding tokens — see frontend/CLAUDE.md "Design Tokens".
+const CARD_PADDING_DENSE = '12px 16px';
+const CARD_PADDING_STANDARD = '20px';
+const CARD_PADDING_HERO = '24px 20px';
 
 // Amount unit options
 const UNIT_OPTIONS = ['TWINS', 'mTWINS', 'uTWINS'] as const;
@@ -64,6 +72,24 @@ export const Receive: React.FC = () => {
   const qrRef = useRef<HTMLDivElement>(null);
   const [qrLogoSrc, setQrLogoSrc] = useState<string | undefined>();
 
+  // Three-layer Enter-spam guard for the request-payment form:
+  //  1. `submittingRef` blocks PARALLEL submissions inside one in-flight
+  //     cycle (synchronous, set before async, cleared in `.finally`).
+  //  2. `e.repeat` block in `onKeyDown` suppresses OS auto-repeat from a
+  //     held key (held Enter no longer fans out across cycle boundaries).
+  //  3. `lastSubmitAtRef` + `SUBMIT_COOLDOWN_MS` debounces rapid taps —
+  //     each cycle can finish in ~100ms with a fast backend, so without
+  //     the cooldown five rapid Enter presses produce five requests with
+  //     five rotated addresses. The cooldown collapses tap-spam into a
+  //     single submission while leaving deliberately-spaced submissions
+  //     (>800ms apart) unaffected. To avoid blocking deliberate
+  //     fix-and-retry after a validation error, the cooldown is reset
+  //     whenever the user types non-empty content into any field — see
+  //     the dedicated useEffect below.
+  const submittingRef = useRef(false);
+  const lastSubmitAtRef = useRef(0);
+  const SUBMIT_COOLDOWN_MS = 800;
+
   // Show toast + highlight when an address is picked from the dialog.
   // Split into two effects: one to consume the flag, one to manage the
   // highlight timer. Combining them caused clearAddressJustSelected() to
@@ -102,6 +128,17 @@ export const Receive: React.FC = () => {
     const timeoutId = setTimeout(() => setCopyFeedback(null), 2000);
     return () => clearTimeout(timeoutId);
   }, [copyFeedback]);
+
+  // Reset the submit-cooldown timestamp when the user types non-empty
+  // content into any form field. This unblocks deliberate fix-and-retry
+  // after a validation error: the user edits the bad field, and the next
+  // Enter is allowed through immediately. The auto-clear that runs on
+  // successful submit empties all three fields, which fails the
+  // `hasContent` check so the cooldown is preserved against rapid taps.
+  useEffect(() => {
+    const hasContent = !!(formState.label || formState.amount || formState.message);
+    if (hasContent) lastSubmitAtRef.current = 0;
+  }, [formState.label, formState.amount, formState.message]);
 
   // Converted amount in TWINS — shared by liveURI and handleSaveQR
   const convertedAmount = useMemo((): number | undefined => {
@@ -276,7 +313,7 @@ export const Receive: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            padding: '24px 20px',
+            padding: CARD_PADDING_HERO,
             backgroundColor: '#2f2f2f',
             borderRadius: '8px',
             border: '1px solid #3a3a3a',
@@ -339,17 +376,8 @@ export const Receive: React.FC = () => {
 
             {/* URI too long warning */}
             {isURITooLong && (
-              <div style={{
-                marginTop: '12px',
-                padding: '4px 10px',
-                backgroundColor: '#4a3a2a',
-                border: '1px solid #ff9966',
-                borderRadius: '4px',
-                color: '#ff9966',
-                fontSize: '10px',
-                textAlign: 'center',
-              }}>
-                {t('receive.uriTooLong')}
+              <div style={{ marginTop: '12px', width: '100%' }}>
+                <Banner variant="warning" message={t('receive.uriTooLong')} />
               </div>
             )}
 
@@ -383,11 +411,12 @@ export const Receive: React.FC = () => {
               >
                 {currentAddress ? truncateAddress(currentAddress, 12, 10) : '...'}
               </span>
-              <CopyIconButton
+              <IconButton
                 onClick={handleCopyAddress}
                 disabled={!currentAddress}
                 title={t('receive.copyAddress')}
                 ariaLabel={t('receive.copyAddress')}
+                icon={<Copy size={12} />}
               />
             </div>
 
@@ -403,9 +432,6 @@ export const Receive: React.FC = () => {
               borderRadius: '6px',
               width: '100%',
             }}>
-              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>
-                {t('receive.uri')}
-              </span>
               <span
                 title={liveURI || (currentAddress ? `twins:${currentAddress}` : '')}
                 style={{
@@ -413,6 +439,7 @@ export const Receive: React.FC = () => {
                   fontSize: '11px',
                   color: '#6699cc',
                   fontFamily: 'monospace',
+                  textAlign: 'center',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -421,11 +448,12 @@ export const Receive: React.FC = () => {
               >
                 {liveURI || (currentAddress ? `twins:${currentAddress}` : '...')}
               </span>
-              <CopyIconButton
+              <IconButton
                 onClick={handleCopyURI}
                 disabled={!liveURI && !currentAddress}
                 title={t('receive.copyUri')}
                 ariaLabel={t('receive.copyUri')}
+                icon={<Copy size={12} />}
               />
             </div>
           </div>
@@ -435,7 +463,7 @@ export const Receive: React.FC = () => {
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            padding: '20px',
+            padding: CARD_PADDING_STANDARD,
             backgroundColor: '#2f2f2f',
             borderRadius: '8px',
             border: '1px solid #3a3a3a',
@@ -447,7 +475,34 @@ export const Receive: React.FC = () => {
               {t('receive.requestPaymentSubtitle')}
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+            <form
+              onKeyDown={(e) => {
+                // Suppress Enter auto-repeat from a held key. Without this,
+                // a key-hold spans multiple full request cycles (each cycle
+                // generates a fresh address when "new address per request"
+                // is enabled), so holding Enter creates A, B, C, D...
+                // `event.repeat === true` only for keystrokes synthesized
+                // by the OS auto-repeat — a deliberate single keypress is
+                // unaffected.
+                if (e.key === 'Enter' && e.repeat) {
+                  e.preventDefault();
+                }
+              }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                // Three-layer guard: parallel-submission block + cooldown
+                // for rapid taps. See `submittingRef` declaration above
+                // for the full rationale.
+                if (submittingRef.current || isCreatingRequest || isLoading) return;
+                if (Date.now() - lastSubmitAtRef.current < SUBMIT_COOLDOWN_MS) return;
+                lastSubmitAtRef.current = Date.now();
+                submittingRef.current = true;
+                Promise.resolve(handleCreateRequest()).finally(() => {
+                  submittingRef.current = false;
+                });
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}
+            >
               {/* Label */}
               <div>
                 <label htmlFor="receive-label" style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
@@ -595,8 +650,7 @@ export const Receive: React.FC = () => {
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button
-                  type="button"
-                  onClick={handleCreateRequest}
+                  type="submit"
                   disabled={isCreatingRequest || isLoading}
                   style={{
                     flex: 1,
@@ -649,10 +703,10 @@ export const Receive: React.FC = () => {
                   alignSelf: 'flex-start',
                 }}
               >
-                <ExternalLink size={11} />
+                <List size={11} />
                 {t('receive.receivingAddresses')}
               </button>
-            </div>
+            </form>
           </div>
         </div>
 
@@ -665,7 +719,7 @@ export const Receive: React.FC = () => {
           backgroundColor: '#2f2f2f',
           borderRadius: '8px',
           border: '1px solid #3a3a3a',
-          padding: '12px 16px',
+          padding: CARD_PADDING_DENSE,
         }}>
           {/* Header with sort options */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexShrink: 0 }}>
@@ -821,7 +875,7 @@ export const Receive: React.FC = () => {
           aria-live="polite"
           style={{
             position: 'fixed',
-            bottom: '36px',
+            bottom: 'calc(var(--qt-statusbar-height) + 12px)',
             left: '50%',
             transform: 'translateX(-50%)',
             backgroundColor: '#333',
@@ -842,97 +896,3 @@ export const Receive: React.FC = () => {
   );
 };
 
-// Reusable inline copy icon button — matches the CopyIconButton pattern from
-// RequestPaymentDialog.tsx so the Receive page and Payment Request dialog
-// share the same affordance for copy actions.
-const CopyIconButton: React.FC<{
-  onClick: () => void;
-  title: string;
-  ariaLabel: string;
-  disabled?: boolean;
-}> = ({ onClick, title, ariaLabel, disabled }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    title={title}
-    aria-label={ariaLabel}
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '24px',
-      height: '24px',
-      background: 'none',
-      border: '1px solid #3a3a3a',
-      borderRadius: '4px',
-      color: '#888',
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      flexShrink: 0,
-      opacity: disabled ? 0.5 : 1,
-      transition: 'color 0.15s, border-color 0.15s',
-    }}
-    onMouseEnter={(e) => {
-      if (disabled) return;
-      e.currentTarget.style.color = '#ddd';
-      e.currentTarget.style.borderColor = '#555';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.color = '#888';
-      e.currentTarget.style.borderColor = '#3a3a3a';
-    }}
-  >
-    <Copy size={12} />
-  </button>
-);
-
-// Reusable outline pill button — used for the Save image and New address
-// affordances rendered below the QR code. Matches the visual style of the
-// "Save image" pill in RequestPaymentDialog.tsx.
-const PillButton: React.FC<{
-  onClick: () => void;
-  title: string;
-  ariaLabel: string;
-  icon: React.ReactNode;
-  label: string;
-  disabled?: boolean;
-  cursor?: React.CSSProperties['cursor'];
-}> = ({ onClick, title, ariaLabel, icon, label, disabled, cursor }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    title={title}
-    aria-label={ariaLabel}
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '6px',
-      padding: '6px 14px',
-      fontSize: '11px',
-      fontWeight: 500,
-      backgroundColor: 'transparent',
-      border: '1px solid #4a4a4a',
-      borderRadius: '999px',
-      color: '#ccc',
-      cursor: disabled ? 'not-allowed' : (cursor ?? 'pointer'),
-      opacity: disabled ? 0.5 : 1,
-      transition: 'background-color 0.15s, border-color 0.15s, color 0.15s',
-    }}
-    onMouseEnter={(e) => {
-      if (disabled) return;
-      e.currentTarget.style.backgroundColor = '#383838';
-      e.currentTarget.style.borderColor = '#5a5a5a';
-      e.currentTarget.style.color = '#fff';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.backgroundColor = 'transparent';
-      e.currentTarget.style.borderColor = '#4a4a4a';
-      e.currentTarget.style.color = '#ccc';
-    }}
-  >
-    {icon}
-    {label}
-  </button>
-);

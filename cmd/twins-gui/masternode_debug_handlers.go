@@ -37,6 +37,20 @@ type DebugFilter struct {
 	Limit    int    `json:"limit,omitempty"`
 }
 
+// DebugEventsPage bundles the paginated event list with cross-file count
+// metadata so the GUI can show "X of Y matching" indicators and a truncation
+// banner without re-fetching. Mirrors debug.QueryResult with timestamp
+// strings instead of time.Time for JSON ergonomics.
+type DebugEventsPage struct {
+	Events       []DebugEvent     `json:"events"`
+	TotalMatched int64            `json:"totalMatched"`
+	TotalScanned int64            `json:"totalScanned"`
+	ByCategory   map[string]int64 `json:"byCategory"`
+	Truncated    bool             `json:"truncated"`
+	FilesScanned int              `json:"filesScanned"`
+	FileSize     int64            `json:"fileSize"`
+}
+
 // GetDebugStatus returns the current debug system status and event counts.
 func (a *App) GetDebugStatus() (*DebugStatusResponse, error) {
 	collector := a.getDebugCollector()
@@ -56,12 +70,19 @@ func (a *App) GetDebugStatus() (*DebugStatusResponse, error) {
 	}, nil
 }
 
-// GetDebugEvents queries the debug log with optional filters.
-// Returns at most 1000 events.
-func (a *App) GetDebugEvents(filter DebugFilter) ([]DebugEvent, error) {
+// GetDebugEvents queries the debug log across all rotated + active JSONL
+// files and returns up to `limit` events with honest count metadata. The
+// underlying collector.Query() is now cross-file (mirroring Summary()), so
+// the Events sub-tab data scope matches the Overview sub-tab. Returns
+// DebugEventsPage with TotalMatched/TotalScanned/ByCategory/Truncated for
+// filter feedback, category chips, and truncation banner rendering.
+func (a *App) GetDebugEvents(filter DebugFilter) (*DebugEventsPage, error) {
 	collector := a.getDebugCollector()
 	if collector == nil {
-		return []DebugEvent{}, nil
+		return &DebugEventsPage{
+			Events:     []DebugEvent{},
+			ByCategory: make(map[string]int64),
+		}, nil
 	}
 
 	limit := filter.Limit
@@ -69,7 +90,7 @@ func (a *App) GetDebugEvents(filter DebugFilter) ([]DebugEvent, error) {
 		limit = 1000
 	}
 
-	events, err := collector.Query(debug.Filter{
+	res, err := collector.Query(debug.Filter{
 		Category: filter.Category,
 		Type:     filter.Type,
 		Source:   filter.Source,
@@ -81,10 +102,10 @@ func (a *App) GetDebugEvents(filter DebugFilter) ([]DebugEvent, error) {
 		return nil, fmt.Errorf("query debug events: %w", err)
 	}
 
-	// Query returns newest-first when Newest is set
-	result := make([]DebugEvent, 0, len(events))
-	for _, e := range events {
-		result = append(result, DebugEvent{
+	// Query returns newest-first when Newest is set.
+	converted := make([]DebugEvent, 0, len(res.Events))
+	for _, e := range res.Events {
+		converted = append(converted, DebugEvent{
 			Timestamp: e.Timestamp.Format("2006-01-02T15:04:05.000Z07:00"),
 			Type:      e.Type,
 			Category:  e.Category,
@@ -94,7 +115,15 @@ func (a *App) GetDebugEvents(filter DebugFilter) ([]DebugEvent, error) {
 		})
 	}
 
-	return result, nil
+	return &DebugEventsPage{
+		Events:       converted,
+		TotalMatched: res.TotalMatched,
+		TotalScanned: res.TotalScanned,
+		ByCategory:   res.ByCategory,
+		Truncated:    res.Truncated,
+		FilesScanned: res.FilesScanned,
+		FileSize:     res.FileSize,
+	}, nil
 }
 
 // GetDebugSummary returns aggregated statistics from all debug events.
@@ -139,5 +168,17 @@ func (a *App) getDebugCollector() *debug.Collector {
 	if node == nil {
 		return nil
 	}
-	return node.DebugCollector
+	// Lock-free atomic load — never reads a torn pointer even when the
+	// masternode.debug subscriber is concurrently swapping the field.
+	return node.DebugCollector.Load()
+}
+
+// IsDebugCollectorActive reports whether the masternode debug collector is
+// currently running. Use this — not GetDaemonConfigBool("masternode.debug") —
+// for the GUI Debug tab gate, since collector startup can fail (e.g. on a
+// read-only data directory) leaving the config value true while the collector
+// is nil. The masternode:debug-changed Wails event also reports the effective
+// state so live updates stay aligned.
+func (a *App) IsDebugCollectorActive() bool {
+	return a.getDebugCollector() != nil
 }

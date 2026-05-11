@@ -109,6 +109,52 @@ var settingsMetadataMap = map[string]SettingMetadata{
 		RequiresRestart: false,
 		DefaultValue:    false,
 	},
+
+	// === Network Tab (RPC TLS) ===
+	"rpc.tls.enabled": {
+		Key:             "rpc.tls.enabled",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    false,
+	},
+	"rpc.tls.certFile": {
+		Key:             "rpc.tls.certFile",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    "",
+	},
+	"rpc.tls.keyFile": {
+		Key:             "rpc.tls.keyFile",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    "",
+	},
+	"rpc.tls.expiryWarnDays": {
+		Key:             "rpc.tls.expiryWarnDays",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    30,
+		MinValue:        1,
+		MaxValue:        365,
+	},
+	"rpc.tls.reloadPassphraseFile": {
+		Key:             "rpc.tls.reloadPassphraseFile",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    "",
+	},
+	"rpc.tls.mtls.enabled": {
+		Key:             "rpc.tls.mtls.enabled",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    false,
+	},
+	"rpc.tls.mtls.clientCAFile": {
+		Key:             "rpc.tls.mtls.clientCAFile",
+		Tab:             "network",
+		RequiresRestart: true,
+		DefaultValue:    "",
+	},
 }
 
 // GetSettingMetadata returns metadata for a single setting

@@ -16,17 +16,17 @@ import (
 	"github.com/twins-dev/twins-core/internal/cli"
 	"github.com/twins-dev/twins-core/internal/config"
 	"github.com/twins-dev/twins-core/internal/daemon"
-	"github.com/twins-dev/twins-core/internal/startup"
 	configservice "github.com/twins-dev/twins-core/internal/gui/config"
 	"github.com/twins-dev/twins-core/internal/gui/core"
+	"github.com/twins-dev/twins-core/internal/gui/initialization"
 	"github.com/twins-dev/twins-core/internal/gui/preferences"
 	"github.com/twins-dev/twins-core/internal/gui/shutdown"
 	"github.com/twins-dev/twins-core/internal/gui/tests/mocks"
 	"github.com/twins-dev/twins-core/internal/gui/window"
-	"github.com/twins-dev/twins-core/internal/gui/initialization"
 	"github.com/twins-dev/twins-core/internal/masternode"
 	"github.com/twins-dev/twins-core/internal/p2p"
 	"github.com/twins-dev/twins-core/internal/rpc"
+	"github.com/twins-dev/twins-core/internal/startup"
 	"github.com/twins-dev/twins-core/internal/wallet"
 	"github.com/twins-dev/twins-core/pkg/types"
 
@@ -34,27 +34,27 @@ import (
 )
 
 const (
-	defaultP2PListenAddr = "0.0.0.0:37817" // Standard TWINS P2P port
-	defaultP2PMaxPeers   = 125             // Max P2P connections
+	defaultP2PListenAddr = "0.0.0.0:37817"      // Standard TWINS P2P port
+	defaultP2PMaxPeers   = 125                  // Max P2P connections
 	defaultRPCPort       = types.DefaultRPCPort // Standard TWINS RPC port
 )
 
 // initPhaseDescriptions maps startup phase names to user-friendly splash screen messages.
 var initPhaseDescriptions = map[string]string{
-	"core":       "Initializing core components...",
-	"storage":    "Opening blockchain database...",
-	"genesis":    "Verifying genesis block...",
-	"consensus":  "Initializing consensus engine...",
-	"blockchain": "Loading blockchain state...",
-	"mempool":    "Initializing transaction pool...",
-	"spork":      "Loading network parameters...",
-	"masternode": "Initializing masternode manager...",
-	"validation": "Validating chain integrity...",
-	"wallet":     "Loading wallet...",
-	"mncache":    "Loading masternode cache...",
-	"parallel":   "Starting mempool and P2P...",
-	"mnconf":        "Loading masternode configuration...",
-	"coreservices":  "Starting core services...",
+	"core":         "Initializing core components...",
+	"storage":      "Opening blockchain database...",
+	"genesis":      "Verifying genesis block...",
+	"consensus":    "Initializing consensus engine...",
+	"blockchain":   "Loading blockchain state...",
+	"mempool":      "Initializing transaction pool...",
+	"spork":        "Loading network parameters...",
+	"masternode":   "Initializing masternode manager...",
+	"validation":   "Validating chain integrity...",
+	"wallet":       "Loading wallet...",
+	"mncache":      "Loading masternode cache...",
+	"parallel":     "Starting mempool and P2P...",
+	"mnconf":       "Loading masternode configuration...",
+	"coreservices": "Starting core services...",
 }
 
 // initErrorCategory defines error classification for the initialization error dialog.
@@ -89,34 +89,34 @@ var initErrorCategories = []initErrorCategory{
 
 // App struct with services
 type App struct {
-	ctx             context.Context
-	coreClient      core.CoreClient        // Core blockchain client (Mock or Real)
-	coreComponents  *daemon.CoreComponents // Full daemon components (nil if using mock) - legacy bridge
-	node            *daemon.Node           // Unified node lifecycle (replaces coreComponents for init)
-	wallet          *wallet.Wallet         // HD wallet for RPC and staking
-	masternodeConf  *masternode.MasternodeConfFile // Masternode config file manager
-	componentsMu    sync.RWMutex           // Mutex for thread-safe component access
-	initStarting    atomic.Bool            // Prevents concurrent initializeFullDaemon calls
-	initCompleted   atomic.Bool            // True after successful daemon initialization
-	initError       string                 // Non-empty if initialization failed (protected by componentsMu)
-	p2pStarting     atomic.Bool            // Prevents concurrent StartP2P calls
-	monitorStarted  atomic.Bool            // Prevents multiple monitor goroutines
-	rpcServer       *rpc.Server            // RPC server for twins-cli compatibility
-	rpcStarted      atomic.Bool            // Prevents multiple RPC server starts
-	initService     *initialization.Service
-	configService   *configservice.Service
-	configManager   *config.ConfigManager  // Unified daemon config (twinsd.yml)
-	windowManager   *window.Manager
-	prefsService    *preferences.Service
-	settingsService *preferences.SettingsService // GUI settings (57+ options)
-	shutdownManager *shutdown.Manager
-	dataDir            string         // Current data directory
-	guiConfig          *cli.GUIConfig // Parsed command-line flags
-	trafficCollector   *TrafficCollector // Background network traffic sampler
-	pendingRepair      *RepairPending // Repair action detected on startup (nil if none)
-	contactsStore      *ContactsStore // Sending address book contacts
-	trayManager        *TrayManager   // System tray icon manager
-	trayQuitRequested  atomic.Bool    // Skips minimize behaviors in OnBeforeClose when Quit chosen from tray
+	ctx               context.Context
+	coreClient        core.CoreClient                // Core blockchain client (Mock or Real)
+	coreComponents    *daemon.CoreComponents         // Full daemon components (nil if using mock) - legacy bridge
+	node              *daemon.Node                   // Unified node lifecycle (replaces coreComponents for init)
+	wallet            *wallet.Wallet                 // HD wallet for RPC and staking
+	masternodeConf    *masternode.MasternodeConfFile // Masternode config file manager
+	componentsMu      sync.RWMutex                   // Mutex for thread-safe component access
+	initStarting      atomic.Bool                    // Prevents concurrent initializeFullDaemon calls
+	initCompleted     atomic.Bool                    // True after successful daemon initialization
+	initError         string                         // Non-empty if initialization failed (protected by componentsMu)
+	p2pStarting       atomic.Bool                    // Prevents concurrent StartP2P calls
+	monitorStarted    atomic.Bool                    // Prevents multiple monitor goroutines
+	rpcServer         *rpc.Server                    // RPC server for twins-cli compatibility
+	rpcStarted        atomic.Bool                    // Prevents multiple RPC server starts
+	initService       *initialization.Service
+	configService     *configservice.Service
+	configManager     *config.ConfigManager // Unified daemon config (twinsd.yml)
+	windowManager     *window.Manager
+	prefsService      *preferences.Service
+	settingsService   *preferences.SettingsService // GUI settings (57+ options)
+	shutdownManager   *shutdown.Manager
+	dataDir           string            // Current data directory
+	guiConfig         *cli.GUIConfig    // Parsed command-line flags
+	trafficCollector  *TrafficCollector // Background network traffic sampler
+	pendingRepair     *RepairPending    // Repair action detected on startup (nil if none)
+	contactsStore     *ContactsStore    // Sending address book contacts
+	trayManager       *TrayManager      // System tray icon manager
+	trayQuitRequested atomic.Bool       // Skips minimize behaviors in OnBeforeClose when Quit chosen from tray
 }
 
 // NewApp creates a new App application struct with parsed CLI config
@@ -673,9 +673,9 @@ func (a *App) initializeFullDaemon() {
 			FullConfig: configSnapshot, // applies wallet settings from twinsd.yml (fees, keypool, reserveBalance, etc.)
 			UseTxCache: true,
 		},
-		P2PConfig:               p2pCfg,
-		Staking:                 staking,
-		ConfigManager:           cm,
+		P2PConfig:     p2pCfg,
+		Staking:       staking,
+		ConfigManager: cm,
 		RPCConfig: &daemon.RPCConfig{
 			ShutdownFunc:          func() { runtime.Quit(a.ctx) },
 			FullConfig:            configSnapshot,
@@ -809,6 +809,24 @@ func (a *App) initializeFullDaemon() {
 					"enabled": enabled,
 				})
 			}
+		})
+
+		// Subscribe to masternode.debug changes so the frontend can hide/show the
+		// Debug tab live. The daemon-side subscriber in node_config_subscribers.go
+		// runs first (it was registered by WireConfigSubscribers during InitWallet),
+		// so by the time this fires the collector has already been started or stopped.
+		// Emit the EFFECTIVE state (collector pointer non-nil), not the raw config
+		// value: if collector startup failed (e.g. file permission error opening
+		// mn-debug.jsonl) the daemon-side subscriber leaves DebugCollector nil and
+		// logs a warning. Reporting the config value here would show the user a
+		// Debug tab that has no working backend.
+		nodeRef := a.node
+		cm.Subscribe("masternode.debug", func(_ string, _, newValue interface{}) {
+			if _, ok := newValue.(bool); !ok {
+				return
+			}
+			active := nodeRef != nil && nodeRef.DebugCollector.Load() != nil
+			runtime.EventsEmit(appCtx, "masternode:debug-changed", active)
 		})
 	}
 
@@ -1497,19 +1515,23 @@ func (a *App) GetRPCStatus() map[string]interface{} {
 			"running": false,
 			"host":    "",
 			"port":    0,
+			"tls":     false,
 		}
 	}
 
 	host := "127.0.0.1"
 	port := defaultRPCPort
+	var tlsEnabled bool
 	if cm := a.getConfigManager(); cm != nil {
 		host = cm.GetString("rpc.host")
 		port = cm.GetInt("rpc.port")
+		tlsEnabled = cm.GetBool("rpc.tls.enabled")
 	}
 	return map[string]interface{}{
 		"running": true,
 		"host":    host,
 		"port":    port,
+		"tls":     tlsEnabled,
 	}
 }
 
@@ -1524,10 +1546,11 @@ func (a *App) GetStakingStatus() map[string]interface{} {
 	// Default response when components not ready
 	if components == nil || components.Consensus == nil {
 		return map[string]interface{}{
-			"staking":        false,
-			"enabled":        false,
-			"walletUnlocked": false,
-			"initialized":    false,
+			"staking":         false,
+			"enabled":         false,
+			"walletUnlocked":  false,
+			"initialized":     false,
+			"multisendActive": false,
 		}
 	}
 
@@ -1546,11 +1569,21 @@ func (a *App) GetStakingStatus() map[string]interface{} {
 		walletUnlocked = !w.IsLocked()
 	}
 
+	// Check MultiSend status (staking or masternode auto-send)
+	multisendActive := false
+	if w != nil {
+		stakeEnabled, masternodeEnabled, _, err := w.GetMultiSendSettings()
+		if err == nil {
+			multisendActive = stakeEnabled || masternodeEnabled
+		}
+	}
+
 	return map[string]interface{}{
-		"staking":        isStaking,
-		"enabled":        stakingEnabled,
-		"walletUnlocked": walletUnlocked,
-		"initialized":    true,
+		"staking":         isStaking,
+		"enabled":         stakingEnabled,
+		"walletUnlocked":  walletUnlocked,
+		"initialized":     true,
+		"multisendActive": multisendActive,
 	}
 }
 
@@ -1688,8 +1721,8 @@ func (a *App) GetWalletEncryptionStatus() map[string]interface{} {
 // UnlockWalletRequest contains parameters for unlocking the wallet.
 type UnlockWalletRequest struct {
 	Passphrase  string `json:"passphrase"`
-	Timeout     int    `json:"timeout"`      // Duration in seconds (0 = indefinite)
-	StakingOnly bool   `json:"stakingOnly"`  // If true, only staking allowed, no sends
+	Timeout     int    `json:"timeout"`     // Duration in seconds (0 = indefinite)
+	StakingOnly bool   `json:"stakingOnly"` // If true, only staking allowed, no sends
 }
 
 // UnlockWalletResult contains the result of an unlock operation.

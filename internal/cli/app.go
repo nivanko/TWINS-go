@@ -285,10 +285,17 @@ func DiscoverConfigFile() string {
 
 // GetEffectiveConfigPath returns the config file path to use
 // If --config explicitly set, returns that path and explicit=true
-// Otherwise returns auto-discovered config (or empty) and explicit=false
+// Otherwise checks --datadir for twinsd.yml, then falls back to ~/.twins/ auto-discovery
 func GetEffectiveConfigPath(c *cli.Context) (path string, explicit bool) {
 	if ConfigWasExplicitlySet(c) {
 		return GetConfigPath(c), true
+	}
+	// Check custom --datadir for twinsd.yml before falling back to ~/.twins/
+	if dataDir := GetDataDir(c); dataDir != "" && dataDir != GetTwinsBaseDir() {
+		ymlPath := filepath.Join(dataDir, "twinsd.yml")
+		if _, err := os.Stat(ymlPath); err == nil {
+			return ymlPath, false
+		}
 	}
 	return DiscoverConfigFile(), false
 }

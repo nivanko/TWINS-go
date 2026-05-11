@@ -3,8 +3,10 @@ package rpc
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -38,6 +40,13 @@ type Server struct {
 	ipFilter    *IPFilter
 	connLimiter *ConnectionLimiter
 	rateLimiter *RateLimiter
+
+	// TLS
+	tlsManager *TLSManager
+	listener   net.Listener
+
+	// TCP-level rate limiter (separate from HTTP-level rateLimiter)
+	tcpRateLimiter *RateLimiter
 
 	// Configuration persistence (optional, set by daemon for RPC→twinsd.yml persistence)
 	configSetter ConfigSetter
@@ -193,6 +202,16 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 
+	// Fail-safe: refuse to serve plaintext RPC on a non-loopback address.
+	// Override requires BOTH rpc.allow_plaintext_public in twinsd.yml AND
+	// --rpc-allow-plaintext-public on the CLI (double-gate pattern).
+	if !isLoopback(s.config.Host) && !s.config.TLS.Enabled && !s.config.AllowPlaintextPublic {
+		return fmt.Errorf("refusing to start: RPC bound to non-loopback address %s without TLS; "+
+			"either enable TLS (rpc.tls.enabled: true + --rpc-tls-enabled) or set BOTH "+
+			"rpc.allow_plaintext_public: true in twinsd.yml AND --rpc-allow-plaintext-public on the command line",
+			s.config.Host)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleRequest)
 
@@ -205,11 +224,22 @@ func (s *Server) Start() error {
 	handler = s.ipFilter.Middleware(handler)
 
 	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      handler,
-		ReadTimeout:  s.config.ReadTimeout,
-		WriteTimeout: s.config.WriteTimeout,
-		IdleTimeout:  s.config.IdleTimeout,
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       s.config.ReadTimeout,
+		ReadHeaderTimeout: s.config.ReadHeaderTimeout, // Slowloris defense: cap header-read phase independently of ReadTimeout
+		WriteTimeout:      s.config.WriteTimeout,
+		IdleTimeout:       s.config.IdleTimeout,
+	}
+
+	// Initialize TLS if enabled
+	if s.config.TLS.Enabled {
+		tm, err := NewTLSManager(s.config.TLS, s.logger.WithField("component", "tls"))
+		if err != nil {
+			return fmt.Errorf("TLS initialization failed: %w", err)
+		}
+		s.tlsManager = tm
+		s.httpServer.TLSConfig = tm.TLSConfig()
 	}
 
 	s.logger.WithField("address", addr).Info("Starting RPC server")
@@ -217,10 +247,42 @@ func (s *Server) Start() error {
 	// Register all handlers
 	s.registerHandlers()
 
+	// Create explicit TCP listener. Using net.Listen + optional tls.NewListener
+	// (instead of ListenAndServeTLS) gives control over the underlying TCP listener.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+	}
+
+	// TCP-level per-IP rate limiting — applied BEFORE TLS handshake to defend
+	// against handshake DoS (each TLS handshake is expensive crypto work).
+	if s.config.RateLimit > 0 {
+		s.tcpRateLimiter = NewRateLimiter(s.config.RateLimit, s.logger.WithField("middleware", "tcp_rate_limiter"))
+		ln = newRateLimitedListener(ln, s.tcpRateLimiter, s.logger.WithField("component", "tcp_rate_limiter"))
+		s.logger.WithField("rate_limit", s.config.RateLimit).Debug("TCP rate limiting enabled")
+	}
+
+	if s.tlsManager != nil {
+		ln = tls.NewListener(ln, s.httpServer.TLSConfig)
+		s.tlsManager.StartMonitoring()
+		s.logger.Info("RPC server TLS enabled (TLS 1.3)")
+	}
+	s.listener = ln
+
+	// Start plaintext-public warning ticker when the escape hatch is active
+	// (TLS off + non-loopback + AllowPlaintextPublic). Stopped via s.shutdown.
+	if !s.config.TLS.Enabled && s.config.AllowPlaintextPublic && !isLoopback(s.config.Host) {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.plaintextWarnLoop()
+		}()
+	}
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			s.logger.WithError(err).Error("RPC server error")
 		}
 	}()
@@ -228,24 +290,77 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Stop stops the RPC server gracefully
+// Stop stops the RPC server gracefully.
+// Shutdown ordering: http.Server.Shutdown first (drains in-flight requests),
+// then TLSManager.Close() (stops expiry tickers). This ensures active TLS
+// connections can complete their responses before monitoring stops.
 func (s *Server) Stop() error {
 	close(s.shutdown)
 	s.rateLimiter.Stop()
+	if s.tcpRateLimiter != nil {
+		s.tcpRateLimiter.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	var shutdownErr error
 	if s.httpServer != nil {
 		if err := s.httpServer.Shutdown(ctx); err != nil {
 			s.logger.WithError(err).Error("Error shutting down RPC server")
-			return err
+			shutdownErr = err
 		}
 	}
 
 	s.wg.Wait()
+
+	// Close TLSManager AFTER http server has drained — tickers stop, cert released
+	if s.tlsManager != nil {
+		s.tlsManager.Close()
+	}
+
 	s.logger.Info("RPC server stopped")
-	return nil
+	return shutdownErr
+}
+
+// plaintextWarnLoop logs a warning every 60 seconds when the RPC server is
+// running without TLS on a non-loopback address (escape hatch active).
+// The structured log field allows log aggregators to suppress/filter.
+func (s *Server) plaintextWarnLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	// Log immediately on start
+	s.logger.WithField("rpc_plaintext_public_active", true).
+		Warn("RPC server running without TLS on non-loopback address")
+
+	for {
+		select {
+		case <-ticker.C:
+			s.logger.WithField("rpc_plaintext_public_active", true).
+				Warn("RPC server running without TLS on non-loopback address")
+		case <-s.shutdown:
+			return
+		}
+	}
+}
+
+// GetTLSManager returns the TLS manager, or nil if TLS is not enabled.
+// Used by the daemon to wire SIGHUP reload (h-rpc-tls-reload-sighup).
+func (s *Server) GetTLSManager() *TLSManager {
+	return s.tlsManager
+}
+
+// isLoopback returns true if the given host string resolves to a loopback address.
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
 
 // handleRequest handles incoming RPC requests
@@ -276,6 +391,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		s.sendError(w, nil, CodeParseError, "Parse error", nil)
 		return
 	}
+
+	// Attach caller address for handlers that need it (e.g., reloadrpccerts backoff)
+	req.RemoteAddr = r.RemoteAddr
 
 	// Set default version if not specified
 	if req.JSONRPC == "" {

@@ -90,6 +90,8 @@ export function GetContacts():Promise<Array<main.Contact>>;
 
 export function GetCurrentReceivingAddress():Promise<core.ReceivingAddress>;
 
+export function GetDaemonConfigBool(arg1:string):Promise<boolean>;
+
 export function GetDaemonConfigCategories():Promise<Array<string>>;
 
 export function GetDaemonConfigMetadata():Promise<Array<config.SettingMeta>>;
@@ -100,7 +102,7 @@ export function GetDaemonPendingRestartKeys():Promise<Array<string>>;
 
 export function GetDataDirectoryInfo():Promise<main.DataDirectoryInfo>;
 
-export function GetDebugEvents(arg1:main.DebugFilter):Promise<Array<main.DebugEvent>>;
+export function GetDebugEvents(arg1:main.DebugFilter):Promise<main.DebugEventsPage>;
 
 export function GetDebugStatus():Promise<main.DebugStatusResponse>;
 
@@ -221,6 +223,8 @@ export function ImportConfig(arg1:string):Promise<void>;
 export function InitializeDataDirectory(arg1:string):Promise<void>;
 
 export function InitiateShutdown():Promise<void>;
+
+export function IsDebugCollectorActive():Promise<boolean>;
 
 export function IsDevMockMode():Promise<boolean>;
 

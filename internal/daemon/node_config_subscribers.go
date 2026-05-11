@@ -5,6 +5,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/twins-dev/twins-core/internal/masternode/debug"
 	"github.com/twins-dev/twins-core/internal/wallet"
 )
 
@@ -282,4 +283,104 @@ func (n *Node) WireConfigSubscribers() {
 			n.logger.WithField("threshold_twins", thresholdTWINS).Info("Stake split threshold updated via config change")
 		}
 	})
+
+	// masternode.debug — start or stop the debug event collector at runtime.
+	// On enable: construct a fresh *debug.Collector from the live max-MB / max-files
+	// config values, Enable() it, and wire it onto the masternode Manager (which
+	// internally fans out to SyncManager + ActiveMasternode) and the P2P server.
+	// On disable: detach the collector from both consumers (atomic.Pointer swap to nil)
+	// and Close() the old instance so its file handle is released.
+	n.ConfigManager.Subscribe("masternode.debug", func(_ string, _, newValue interface{}) {
+		enabled, ok := newValue.(bool)
+		if !ok {
+			n.logger.WithField("type", fmt.Sprintf("%T", newValue)).Warn("masternode.debug: unexpected value type from ConfigManager")
+			return
+		}
+		if n.shuttingDown.Load() {
+			// Shutdown is in progress; doShutdown's Phase 4.5 owns the existing collector.
+			// Do nothing — neither create a new one (would leak past storage close) nor
+			// attempt to close the one shutdown is already closing.
+			return
+		}
+		if n.Masternode == nil {
+			n.logger.Warn("Cannot toggle masternode debug: masternode manager not initialized")
+			return
+		}
+
+		n.mu.Lock()
+		// TOCTOU re-check: shutdown may have started between the early Load above
+		// and the lock acquisition. doShutdown sets shuttingDown.Store(true) before
+		// any phase, then later does an atomic Swap(nil) on DebugCollector — if
+		// shuttingDown is set under our lock we abort, leaving the close path to
+		// shutdown's Swap.
+		if n.shuttingDown.Load() {
+			n.mu.Unlock()
+			return
+		}
+		// Snapshot P2PServer under the same lock used by InitP2P / Shutdown so the
+		// read does not race with the write at node_p2p.go:95 (Go race detector
+		// flags an unsynchronised read otherwise — see Manager pattern at
+		// node_wallet.go:84). The collector wiring then runs unlocked since
+		// SetDebugCollector itself uses atomic.Pointer swap.
+		p2pServer := n.P2PServer
+		if enabled {
+			maxMB := 50
+			maxFiles := 3
+			if v := n.ConfigManager.GetInt("masternode.debugMaxMB"); v > 0 {
+				maxMB = v
+			}
+			if v := n.ConfigManager.GetInt("masternode.debugMaxFiles"); v > 0 {
+				maxFiles = v
+			}
+			c := debug.NewCollector(n.Config.DataDir, maxMB, maxFiles)
+			if err := c.Enable(); err != nil {
+				n.mu.Unlock()
+				n.logger.WithError(err).Warn("Failed to enable masternode debug collector via config change")
+				return
+			}
+			old := n.DebugCollector.Swap(c)
+			n.mu.Unlock()
+			n.Masternode.SetDebugCollector(c)
+			if p2pServer != nil {
+				p2pServer.SetDebugCollector(c)
+			}
+			// Defensive: ConfigManager.Set() may notify subscribers when the same
+			// value is re-applied (e.g. user clicks Apply twice in the Options
+			// dialog without changing anything). Close the previous collector so
+			// the file handle does not leak. The new collector has already been
+			// swapped onto Manager + P2PServer, so any in-flight Emit() call has
+			// switched targets via the atomic.Pointer load before we close the
+			// old one.
+			if old != nil {
+				old.Close()
+			}
+			n.logger.Info("Masternode debug collector started via config change")
+		} else {
+			old := n.DebugCollector.Swap(nil)
+			n.mu.Unlock()
+			n.Masternode.SetDebugCollector(nil)
+			if p2pServer != nil {
+				p2pServer.SetDebugCollector(nil)
+			}
+			if old != nil {
+				old.Close()
+			}
+			n.logger.Info("Masternode debug collector stopped via config change")
+		}
+	})
+
+	// Reconcile masternode.debug runtime state with the persisted ConfigManager
+	// value. NewNode took a snapshot via cfg.MasternodeDebug — if anything wrote
+	// to twinsd.yml in the brief window between LoadOrCreate and this call (an
+	// external YAML editor, an early Set before subscribers were attached, etc.),
+	// runtime state is stale until the user toggles the setting again. Firing
+	// Set with the persisted value re-runs the subscriber above and re-aligns
+	// runtime with truth. Skip when state already matches to avoid a wasted
+	// collector swap on the common path.
+	persistedDebug := n.ConfigManager.GetBool("masternode.debug")
+	if persistedDebug != (n.DebugCollector.Load() != nil) {
+		if err := n.ConfigManager.Set("masternode.debug", persistedDebug); err != nil {
+			n.logger.WithError(err).Warn("Failed to reconcile masternode.debug runtime state with config")
+		}
+	}
 }

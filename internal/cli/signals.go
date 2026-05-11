@@ -17,6 +17,7 @@ type SignalHandler struct {
 	done         chan struct{}
 	logger       *logrus.Entry
 	reloadFunc   func() error // Optional config reload callback
+	reloadMu     sync.Mutex   // Protects reloadFunc (safe to call SetReloadFunc after Start)
 	signals      chan os.Signal
 	shutdownOnce sync.Once
 	stopOnce     sync.Once
@@ -59,9 +60,12 @@ func (sh *SignalHandler) Start() {
 				sh.shutdownOnce.Do(func() { close(sh.shutdown) })
 				// Continue running to catch second signal for force exit
 			case syscall.SIGHUP:
-				if sh.reloadFunc != nil {
+				sh.reloadMu.Lock()
+				fn := sh.reloadFunc
+				sh.reloadMu.Unlock()
+				if fn != nil {
 					sh.logger.Info("Received SIGHUP - reloading configuration")
-					if err := sh.reloadFunc(); err != nil {
+					if err := fn(); err != nil {
 						sh.logger.WithError(err).Error("Configuration reload failed")
 					} else {
 						sh.logger.Info("Configuration reloaded successfully")
@@ -104,9 +108,12 @@ func (sh *SignalHandler) Stop() {
 	})
 }
 
-// SetReloadFunc sets the configuration reload callback
+// SetReloadFunc sets the configuration reload callback.
+// Safe to call after Start() — protected by reloadMu.
 func (sh *SignalHandler) SetReloadFunc(fn func() error) {
+	sh.reloadMu.Lock()
 	sh.reloadFunc = fn
+	sh.reloadMu.Unlock()
 }
 
 // SetupGracefulShutdown sets up graceful shutdown handling for a service

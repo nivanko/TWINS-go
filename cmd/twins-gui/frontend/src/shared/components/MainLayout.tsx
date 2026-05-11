@@ -26,6 +26,7 @@ interface StatusIndicators {
   isTor: boolean;
   isHD: boolean;
   initialized: boolean;
+  isMultisendActive: boolean;
 }
 
 export const MainLayout: React.FC = () => {
@@ -54,6 +55,7 @@ export const MainLayout: React.FC = () => {
     isTor: false,
     isHD: false,
     initialized: false,
+    isMultisendActive: false,
   });
 
   // Wallet dialog states
@@ -91,6 +93,7 @@ export const MainLayout: React.FC = () => {
             isTor: torStatus?.enabled ?? false,
             isHD: encryptionStatus?.hd_enabled ?? false,
             initialized: encryptionStatus?.initialized ?? false,
+            isMultisendActive: stakingStatus?.multisendActive ?? false,
           });
         }
       } catch (error) {
@@ -299,6 +302,7 @@ export const MainLayout: React.FC = () => {
         isHD={statusIndicators.isHD}
         initialized={statusIndicators.initialized}
         isTor={statusIndicators.isTor}
+        isMultisendActive={statusIndicators.isMultisendActive}
         displayUnit={displayUnit}
         onLockClick={handleLockClick}
         onEncryptClick={handleEncryptClick}

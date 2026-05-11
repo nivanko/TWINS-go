@@ -43,6 +43,19 @@ func (a *App) GetDaemonConfigValues() map[string]interface{} {
 	return cm.GetAllValues()
 }
 
+// GetDaemonConfigBool returns the current value of a boolean daemon config key
+// from the unified ConfigManager (twinsd.yml). Use this — not GetSettingBool —
+// for any key registered in internal/config/registry.go (e.g. masternode.debug,
+// staking.enabled). GetSettingBool only reaches the GUI's local SettingsService
+// store and silently returns false for daemon keys, which is a footgun.
+func (a *App) GetDaemonConfigBool(key string) bool {
+	cm := a.getConfigManager()
+	if cm == nil {
+		return false
+	}
+	return cm.GetBool(key)
+}
+
 // SetDaemonConfigValue sets a single daemon config value by key.
 // Validates the value, persists to twinsd.yml, and triggers subscriber callbacks
 // for hot-reloadable settings (staking, fees, logging).

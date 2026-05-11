@@ -3,6 +3,8 @@ package cli
 import (
 	"runtime"
 	"strings"
+
+	"github.com/urfave/cli/v2"
 )
 
 // NormalizeArgs converts command-line arguments to standard Bitcoin-style format.
@@ -96,6 +98,119 @@ func ProcessNegativeFlags(args []string) (processedArgs []string, negatedFlags m
 func NormalizeAndProcessArgs(args []string) ([]string, map[string]bool) {
 	normalized := NormalizeArgs(args)
 	return ProcessNegativeFlags(normalized)
+}
+
+// CollectAppFlagInfo inspects a slice of cli.Flag definitions and returns two
+// lookup maps: valueFlags contains names of flags that consume a value argument
+// (string, int, duration, etc.) and boolFlags contains names of boolean flags.
+// Both maps include aliases.
+func CollectAppFlagInfo(flags []cli.Flag) (valueFlags, boolFlags map[string]bool) {
+	valueFlags = make(map[string]bool)
+	boolFlags = make(map[string]bool)
+	for _, f := range flags {
+		names := f.Names()
+		if _, ok := f.(*cli.BoolFlag); ok {
+			for _, n := range names {
+				boolFlags[n] = true
+			}
+		} else {
+			for _, n := range names {
+				valueFlags[n] = true
+			}
+		}
+	}
+	return
+}
+
+// ReorderSubcommandArgs reorders CLI arguments so that recognized app-level
+// flags appearing after positional arguments in a subcommand are moved before
+// them. This fixes urfave/cli v2's parser miscounting positional args when
+// flags follow them.
+//
+// Example:
+//
+//	Input:  ["program", "subcmd", "pos1", "--flag=val"]
+//	Output: ["program", "subcmd", "--flag=val", "pos1"]
+func ReorderSubcommandArgs(args []string, valueFlags, boolFlags map[string]bool) []string {
+	if len(args) < 3 {
+		return args
+	}
+
+	// Find the subcommand index: skip program name (args[0]), then skip any
+	// app-level flags before the subcommand. The subcommand is the first
+	// non-flag argument after the program name.
+	subcmdIdx := -1
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// Flag before subcommand — skip it (and its value if applicable)
+			name := stripFlagName(arg)
+			if !strings.Contains(arg, "=") && valueFlags[name] {
+				i++ // skip the next arg (flag value)
+			}
+			continue
+		}
+		subcmdIdx = i
+		break
+	}
+
+	if subcmdIdx < 0 || subcmdIdx >= len(args)-1 {
+		return args // no subcommand found, or nothing after it
+	}
+
+	// Separate the args after the subcommand into flags and positional args.
+	rest := args[subcmdIdx+1:]
+	var flags []string
+	var positionals []string
+
+	for i := 0; i < len(rest); i++ {
+		arg := rest[i]
+
+		// "--" terminates flag processing; everything after is positional.
+		if arg == "--" {
+			positionals = append(positionals, rest[i:]...)
+			break
+		}
+
+		if strings.HasPrefix(arg, "-") {
+			name := stripFlagName(arg)
+			if valueFlags[name] {
+				if strings.Contains(arg, "=") {
+					flags = append(flags, arg)
+				} else if i+1 < len(rest) {
+					flags = append(flags, arg, rest[i+1])
+					i++
+				} else {
+					// Trailing flag without value — pass through, let urfave report the error.
+					flags = append(flags, arg)
+				}
+			} else if boolFlags[name] {
+				flags = append(flags, arg)
+			} else {
+				// Unrecognized flag — treat as positional to avoid swallowing
+				// subcommand-specific flags or unknown args.
+				positionals = append(positionals, arg)
+			}
+		} else {
+			positionals = append(positionals, arg)
+		}
+	}
+
+	result := make([]string, 0, len(args))
+	result = append(result, args[:subcmdIdx+1]...)
+	result = append(result, flags...)
+	result = append(result, positionals...)
+	return result
+}
+
+// stripFlagName extracts the bare flag name from an argument.
+// "--datadir=/path" → "datadir", "-d" → "d", "--rpc-tls" → "rpc-tls"
+func stripFlagName(arg string) string {
+	name := strings.TrimLeft(arg, "-")
+	if idx := strings.Index(name, "="); idx >= 0 {
+		name = name[:idx]
+	}
+	return name
 }
 
 // IsHelpFlag checks if the argument is a help flag (-?, -h, -help, --help)

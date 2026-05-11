@@ -1,19 +1,43 @@
-import React from 'react';
-import { UseFormRegister } from 'react-hook-form';
+import React, { useState } from 'react';
+import { UseFormRegister, useWatch } from 'react-hook-form';
+import type { Control } from 'react-hook-form';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useCoinControl } from '@/store/useStore';
 import { useDisplayUnits } from '@/shared/hooks/useDisplayUnits';
-import { Coins } from 'lucide-react';
+import { PillButton } from '@/shared/components/PillButton';
 
 export interface SendCoinControlProps {
   register: UseFormRegister<any>;
+  control: Control<any>;
   watchedCustomChangeAddress: boolean;
   watchedSplitUTXO: boolean;
   calculateUTXOSize: () => string;
   onOpenCoinControl: () => void;
 }
 
+const inputStyle: React.CSSProperties = {
+  backgroundColor: '#252525',
+  border: '1px solid #3a3a3a',
+  borderRadius: '4px',
+  padding: '7px 10px',
+  fontSize: '12px',
+  color: '#ddd',
+  outline: 'none',
+};
+
+const checkboxLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  cursor: 'pointer',
+};
+
+const fieldLabelStyle: React.CSSProperties = { fontSize: '11px', color: '#888' };
+const fieldLabelActiveStyle: React.CSSProperties = { fontSize: '11px', color: '#ddd' };
+
 export const SendCoinControl: React.FC<SendCoinControlProps> = ({
   register,
+  control,
   watchedCustomChangeAddress,
   watchedSplitUTXO,
   calculateUTXOSize,
@@ -21,136 +45,194 @@ export const SendCoinControl: React.FC<SendCoinControlProps> = ({
 }) => {
   const { coinControl, utxos } = useCoinControl();
   const { formatAmount } = useDisplayUnits();
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  // Get selected coins count and total amount
+  const watchedChangeAddress = useWatch({ control, name: 'changeAddress' }) as string | undefined;
+  const watchedSplitOutputs = useWatch({ control, name: 'splitOutputs' }) as string | number | undefined;
+
   const selectedCount = coinControl.selectedCoins.size;
   const hasManualSelection = selectedCount > 0;
 
-  // Calculate total selected amount from UTXOs
   const selectedAmount = hasManualSelection
     ? utxos
-        .filter(utxo => coinControl.selectedCoins.has(`${utxo.txid}:${utxo.vout}`))
+        .filter((utxo) => coinControl.selectedCoins.has(`${utxo.txid}:${utxo.vout}`))
         .reduce((sum, utxo) => sum + utxo.amount, 0)
     : 0;
 
+  const customChangeActive =
+    !!watchedCustomChangeAddress &&
+    typeof watchedChangeAddress === 'string' &&
+    watchedChangeAddress.trim() !== '';
+
+  const summaryParts: string[] = [];
+  if (hasManualSelection) {
+    summaryParts.push(`Coins: ${selectedCount} sel, ${formatAmount(selectedAmount)}`);
+  }
+  if (customChangeActive) {
+    summaryParts.push('Custom change');
+  }
+  if (watchedSplitUTXO) {
+    const splitN = parseInt(String(watchedSplitOutputs ?? ''), 10);
+    if (splitN > 0) {
+      summaryParts.push(`Split ${splitN}×`);
+    }
+  }
+  const summaryText = summaryParts.length > 0 ? summaryParts.join(' · ') : 'Auto';
+  const summaryColor = summaryParts.length > 0 ? '#ff9966' : '#aaa';
+
   return (
-    <div className="qt-frame-secondary" style={{
-      marginBottom: '8px',
-      padding: '6px',
-      border: '1px solid #4a4a4a',
-      borderRadius: '2px',
-      backgroundColor: '#3a3a3a'
-    }}>
-      <div className="qt-vbox" style={{ gap: '6px' }}>
-        <div className="qt-label" style={{ fontWeight: 'bold', marginBottom: '2px', fontSize: '12px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label={isExpanded ? 'Collapse Coin Control' : 'Expand Coin Control'}
+        onClick={() => setIsExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded((v) => !v);
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        {isExpanded ? (
+          <ChevronDown size={14} color="#888" />
+        ) : (
+          <ChevronRight size={14} color="#888" />
+        )}
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#ccc' }}>
           Coin Control Features
-        </div>
-
-        <div className="qt-hbox" style={{ gap: '10px', alignItems: 'center' }}>
-          <button
-            type="button"
+        </span>
+        <span style={{ fontSize: '11px', color: summaryColor }}>{summaryText}</span>
+        <div style={{ flex: 1 }} />
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <PillButton
             onClick={onOpenCoinControl}
-            className="qt-button"
-            style={{ padding: '3px 10px', fontSize: '12px' }}
-          >
-            Open Coin Control...
-          </button>
-
-          {/* Dynamic coin selection status */}
-          {hasManualSelection ? (
-            <div className="qt-hbox" style={{ gap: '6px', alignItems: 'center' }}>
-              <Coins size={14} style={{ color: '#ffaa00' }} />
-              <span className="qt-label" style={{ fontSize: '11px', color: '#ffaa00' }}>
-                {selectedCount} coin{selectedCount !== 1 ? 's' : ''} manually selected ({formatAmount(selectedAmount)})
-              </span>
-            </div>
-          ) : (
-            <span className="qt-label" style={{ fontSize: '11px', color: '#999' }}>
-              Coins automatically selected
-            </span>
-          )}
-        </div>
-
-        <div className="qt-hbox" style={{ gap: '15px', marginTop: '6px', alignItems: 'center' }}>
-          <label className="qt-hbox" style={{ alignItems: 'center', gap: '4px' }}>
-            <input
-              type="checkbox"
-              {...register('customChangeAddress')}
-              className="qt-checkbox"
-              style={{ width: '13px', height: '13px' }}
-            />
-            <span className="qt-label" style={{ fontSize: '12px' }}>Custom change address</span>
-          </label>
-
-          <input
-            type="text"
-            {...register('changeAddress')}
-            placeholder="Enter a TWINS address (e.g. WJmGqDGiE5sGJxHwvW4sSodfnGMgQ9XFb)"
-            className="qt-input"
-            disabled={!watchedCustomChangeAddress}
-            style={{
-              flex: 1,
-              padding: '2px 4px',
-              fontSize: '11px',
-              backgroundColor: watchedCustomChangeAddress ? '#2b2b2b' : '#232323',
-              border: '1px solid #1a1a1a',
-              opacity: watchedCustomChangeAddress ? 1 : 0.5,
-              cursor: watchedCustomChangeAddress ? 'text' : 'not-allowed'
-            }}
+            icon={null}
+            label="Open Coin Control..."
+            title="Open Coin Control"
+            ariaLabel="Open Coin Control"
           />
         </div>
+      </div>
 
-        <div className="qt-hbox" style={{ gap: '15px', alignItems: 'center' }}>
-          <label className="qt-hbox" style={{ alignItems: 'center', gap: '4px' }}>
-            <input
-              type="checkbox"
-              {...register('splitUTXO')}
-              className="qt-checkbox"
-              style={{ width: '13px', height: '13px' }}
-            />
-            <span className="qt-label" style={{ fontSize: '12px' }}>Split UTXO</span>
-          </label>
+      {isExpanded && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            gap: '24px',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              flex: '1 1 480px',
+              minWidth: 0,
+            }}
+          >
+            <label style={{ ...checkboxLabelStyle, flexShrink: 0 }}>
+              <input
+                type="checkbox"
+                {...register('customChangeAddress')}
+                style={{ width: '13px', height: '13px' }}
+              />
+              <span style={watchedCustomChangeAddress ? fieldLabelActiveStyle : fieldLabelStyle}>
+                Custom change address
+              </span>
+            </label>
 
-          <div className="qt-hbox" style={{ alignItems: 'center', gap: '6px' }}>
-            <span className="qt-label" style={{
-              fontSize: '12px',
-              opacity: watchedSplitUTXO ? 1 : 0.5
-            }}>
-              # of outputs
-            </span>
             <input
               type="text"
-              {...register('splitOutputs')}
-              className="qt-input"
-              disabled={!watchedSplitUTXO}
+              {...register('changeAddress')}
+              placeholder="Enter a TWINS address (e.g. WJmGqDGiE5sGJxHwvW4sSodfnGMgQ9XFb)"
+              disabled={!watchedCustomChangeAddress}
               style={{
-                width: '60px',
-                padding: '2px 4px',
-                fontSize: '11px',
-                backgroundColor: watchedSplitUTXO ? '#2b2b2b' : '#232323',
-                border: '1px solid #1a1a1a',
-                opacity: watchedSplitUTXO ? 1 : 0.5,
-                cursor: watchedSplitUTXO ? 'text' : 'not-allowed'
+                ...inputStyle,
+                flex: 1,
+                minWidth: 0,
+                cursor: watchedCustomChangeAddress ? 'text' : 'not-allowed',
               }}
             />
           </div>
 
-          <div className="qt-hbox" style={{ alignItems: 'center', gap: '6px' }}>
-            <span className="qt-label" style={{
-              fontSize: '12px',
-              opacity: watchedSplitUTXO ? 1 : 0.5
-            }}>
-              UTXO Size:
-            </span>
-            <span className="qt-label" style={{
-              fontSize: '12px',
-              opacity: watchedSplitUTXO ? 1 : 0.5
-            }}>
-              {watchedSplitUTXO ? calculateUTXOSize() : '0'} TWINS
-            </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              flexShrink: 0,
+              flexWrap: 'wrap',
+            }}
+          >
+            <label style={{ ...checkboxLabelStyle, flexShrink: 0 }}>
+              <input
+                type="checkbox"
+                {...register('splitUTXO')}
+                style={{ width: '13px', height: '13px' }}
+              />
+              <span style={watchedSplitUTXO ? fieldLabelActiveStyle : fieldLabelStyle}>Split UTXO</span>
+            </label>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexShrink: 0,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span style={watchedSplitUTXO ? fieldLabelActiveStyle : fieldLabelStyle}># of outputs</span>
+                <input
+                  type="text"
+                  {...register('splitOutputs')}
+                  disabled={!watchedSplitUTXO}
+                  style={{
+                    ...inputStyle,
+                    width: '60px',
+                    cursor: watchedSplitUTXO ? 'text' : 'not-allowed',
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span style={watchedSplitUTXO ? fieldLabelActiveStyle : fieldLabelStyle}>UTXO Size:</span>
+                <span style={watchedSplitUTXO ? fieldLabelActiveStyle : fieldLabelStyle}>
+                  {watchedSplitUTXO ? calculateUTXOSize() : '0'} TWINS
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

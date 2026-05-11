@@ -32,6 +32,11 @@ func (n *Node) Shutdown() {
 
 // doShutdown performs the actual shutdown work (called once via shutdownOnce).
 func (n *Node) doShutdown() {
+	// Mark the node as shutting down so any concurrent ConfigManager subscriber
+	// callbacks (e.g. masternode.debug toggling) bail out before allocating new
+	// resources that would leak past Phase 8 (storage close).
+	n.shuttingDown.Store(true)
+
 	n.logger.Debug("Starting graceful shutdown...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), types.ShutdownTimeout)
@@ -120,10 +125,13 @@ func (n *Node) doShutdown() {
 		}
 	}
 
-	// Phase 4.5: Close masternode debug collector (flush buffered events)
-	if n.DebugCollector != nil {
+	// Phase 4.5: Close masternode debug collector (flush buffered events).
+	// atomic.Pointer.Swap atomically replaces the field with nil and returns the
+	// previous value, so this races safely against the masternode.debug
+	// hot-reload subscriber even without n.mu.
+	if dc := n.DebugCollector.Swap(nil); dc != nil {
 		n.logger.Debug("Closing masternode debug collector...")
-		n.DebugCollector.Close()
+		dc.Close()
 	}
 
 	// Phase 5: Stop consensus engine (with timeout to ensure wallet save and

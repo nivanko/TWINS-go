@@ -426,6 +426,33 @@ func TestIsSetInLineage(t *testing.T) {
 	assert.False(t, hostIsSet, "rpc-host was not explicitly set")
 }
 
+func TestGetEffectiveConfigPath_DataDir(t *testing.T) {
+	// Create a temp dir with twinsd.yml to simulate custom --datadir
+	customDir := t.TempDir()
+	ymlPath := filepath.Join(customDir, "twinsd.yml")
+	require.NoError(t, os.WriteFile(ymlPath, []byte("rpc:\n  host: 127.0.0.1\n"), 0644))
+
+	app := CreateBaseApp("test", "test", "1.0.0")
+	var gotPath string
+	var gotExplicit bool
+	app.Commands = []*cli.Command{
+		{
+			Name: "getinfo",
+			Action: func(c *cli.Context) error {
+				gotPath, gotExplicit = GetEffectiveConfigPath(c)
+				return nil
+			},
+		},
+	}
+	PropagateAppFlags(app)
+
+	err := app.Run([]string{"test", "--datadir", customDir, "getinfo"})
+	require.NoError(t, err)
+
+	assert.Equal(t, ymlPath, gotPath, "should discover twinsd.yml in custom --datadir")
+	assert.False(t, gotExplicit, "auto-discovered config should not be marked explicit")
+}
+
 // Benchmark tests
 func BenchmarkCreateBaseApp(b *testing.B) {
 	for i := 0; i < b.N; i++ {

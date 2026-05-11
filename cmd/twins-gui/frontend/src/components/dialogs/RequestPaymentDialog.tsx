@@ -11,6 +11,8 @@ import { truncateAddress } from '@/shared/utils/format';
 import { SaveQRImage } from '@wailsjs/go/main/App';
 import { createCircularLogoDataURL } from '@/shared/utils/qrLogo';
 import { buildQRFilename } from '@/shared/utils/qrFilename';
+import { IconButton } from '@/shared/components/IconButton';
+import { PillButton } from '@/shared/components/PillButton';
 
 export const RequestPaymentDialog: React.FC = () => {
   const { t } = useTranslation('wallet');
@@ -234,40 +236,15 @@ export const RequestPaymentDialog: React.FC = () => {
           </div>
 
           {/* Save image pill button — always visible for discoverability */}
-          <button
-            type="button"
-            onClick={handleSaveQR}
-            aria-label={t('receive.requestDialog.saveImage')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              fontSize: '11px',
-              fontWeight: 500,
-              backgroundColor: 'transparent',
-              border: '1px solid #4a4a4a',
-              borderRadius: '999px',
-              color: '#ccc',
-              cursor: 'pointer',
-              transition: 'background-color 0.15s, border-color 0.15s, color 0.15s',
-              marginTop: '-4px',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#383838';
-              e.currentTarget.style.borderColor = '#5a5a5a';
-              e.currentTarget.style.color = '#fff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.borderColor = '#4a4a4a';
-              e.currentTarget.style.color = '#ccc';
-            }}
-          >
-            <Download size={12} />
-            {t('receive.requestDialog.saveImage')}
-          </button>
+          <div style={{ marginTop: '-4px' }}>
+            <PillButton
+              onClick={handleSaveQR}
+              title={t('receive.requestDialog.saveImage')}
+              ariaLabel={t('receive.requestDialog.saveImage')}
+              icon={<Download size={12} />}
+              label={t('receive.requestDialog.saveImage')}
+            />
+          </div>
 
           {/* URI too long warning */}
           {isURITooLong && (
@@ -315,10 +292,11 @@ export const RequestPaymentDialog: React.FC = () => {
             >
               {truncateAddress(selectedRequest.address, 12, 10)}
             </span>
-            <CopyIconButton
+            <IconButton
               onClick={handleCopyAddress}
               title={t('receive.requestDialog.copyAddress')}
               ariaLabel={t('receive.requestDialog.copyAddress')}
+              icon={<Copy size={12} />}
             />
           </div>
 
@@ -398,10 +376,11 @@ export const RequestPaymentDialog: React.FC = () => {
               >
                 {uri}
               </span>
-              <CopyIconButton
+              <IconButton
                 onClick={handleCopyURI}
                 title={t('receive.requestDialog.copyUriTooltip')}
                 ariaLabel={t('receive.requestDialog.copyUri')}
+                icon={<Copy size={12} />}
               />
             </div>
           </div>
@@ -435,47 +414,8 @@ export const RequestPaymentDialog: React.FC = () => {
   );
 };
 
-// Reusable copy icon button for inline copy actions inside the dialog.
-// Matches the styling of the URI row's copy button.
-const CopyIconButton: React.FC<{ onClick: () => void; title: string; ariaLabel: string }> = ({
-  onClick,
-  title,
-  ariaLabel,
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    title={title}
-    aria-label={ariaLabel}
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '24px',
-      height: '24px',
-      background: 'none',
-      border: '1px solid #3a3a3a',
-      borderRadius: '4px',
-      color: '#888',
-      cursor: 'pointer',
-      flexShrink: 0,
-      transition: 'color 0.15s, border-color 0.15s',
-    }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.color = '#ddd';
-      e.currentTarget.style.borderColor = '#555';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.color = '#888';
-      e.currentTarget.style.borderColor = '#3a3a3a';
-    }}
-  >
-    <Copy size={12} />
-  </button>
-);
-
 // Reusable info row for the payment information card.
-// Optionally renders a `CopyIconButton` on the right when `onCopy` is provided.
+// Optionally renders a copy `IconButton` on the right when `onCopy` is provided.
 const InfoRow: React.FC<{
   label: string;
   children: React.ReactNode;
@@ -489,10 +429,11 @@ const InfoRow: React.FC<{
       {children}
     </span>
     {onCopy && (
-      <CopyIconButton
+      <IconButton
         onClick={onCopy}
         title={copyTitle ?? ''}
         ariaLabel={copyAriaLabel ?? ''}
+        icon={<Copy size={12} />}
       />
     )}
   </div>

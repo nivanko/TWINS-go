@@ -3,9 +3,40 @@ import { useTranslation } from 'react-i18next';
 import { UseFormRegister, FieldError } from 'react-hook-form';
 import { Clipboard, BookOpen, UserPlus, X } from 'lucide-react';
 import { useAddressValidation, getValidationStatus } from '@/shared/hooks/useAddressValidation';
+import { IconButton } from '@/shared/components/IconButton';
 
 // Quick client-side address format check (same regex as Send.tsx / AddressBookDialog.tsx)
 const TWINS_ADDRESS_REGEX = /^[Wamn][a-km-zA-HJ-NP-Z1-9]{33}$/;
+
+// Design tokens — Receive page reference (see frontend/CLAUDE.md "Design Tokens")
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '7px 10px',
+  fontSize: '12px',
+  backgroundColor: '#252525',
+  border: '1px solid #3a3a3a',
+  borderRadius: '4px',
+  color: '#ddd',
+  outline: 'none',
+};
+const rowCardStyle: React.CSSProperties = {
+  backgroundColor: '#2a2a2a',
+  border: '1px solid #3a3a3a',
+  borderRadius: '6px',
+  padding: '12px',
+  display: 'flex',
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: '8px',
+  transition: 'border-color 0.15s',
+};
+const errorMessageStyle: React.CSSProperties = {
+  marginLeft: '0',
+  marginTop: '-4px',
+  fontSize: '11px',
+  flexBasis: '100%',
+};
 
 interface RecipientFieldErrors {
   address?: FieldError;
@@ -49,63 +80,51 @@ const RecipientFieldComponent: React.FC<RecipientFieldProps> = ({
   const labelInputId = `recipient-label-${index}`;
   const amountInputId = `recipient-amount-${index}`;
 
+  // Address border color reflects form-error / async validation state
+  const addressBorderColor =
+    errors?.address || validationStatus.status === 'invalid' || validationStatus.status === 'error'
+      ? '#ff6666'
+      : validationStatus.status === 'valid'
+      ? '#27ae60'
+      : validationStatus.status === 'warning'
+      ? '#ff9966'
+      : '#3a3a3a';
+
   return (
-    <div className="qt-vbox" style={{ gap: '8px' }}>
-      {/* Recipient header with remove button - shown only when multiple recipients */}
+    <div
+      style={rowCardStyle}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = '#444';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = '#3a3a3a';
+      }}
+    >
+      {/* Header: only when multiple recipients */}
       {showRemoveButton && (
-        <div className="qt-hbox" style={{
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '-4px',
-        }}>
-          <span className="qt-label" style={{
-            fontSize: '11px',
-            color: '#999',
-          }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexBasis: '100%' }}>
+          <span style={{ fontSize: '11px', color: '#888' }}>
             {t('send.recipients.title', { number: index + 1 })}
           </span>
-          <button
-            type="button"
-            onClick={onRemove}
-            className="qt-button-icon"
-            style={{
-              padding: '3px 6px',
-              minHeight: '24px',
-              backgroundColor: '#404040',
-              border: '1px solid #555',
-              borderRadius: '2px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
+          <IconButton
+            icon={<X size={12} />}
             title={t('send.recipients.remove')}
-          >
-            <X size={12} />
-            <span style={{ fontSize: '11px' }}>{t('send.recipients.removeLabel')}</span>
-          </button>
+            ariaLabel={t('send.recipients.remove')}
+            onClick={onRemove}
+            variant="danger"
+          />
         </div>
       )}
-      {/* Pay To Field */}
-      <div className="qt-hbox" style={{ alignItems: 'center', gap: '6px' }}>
-        <label
-          htmlFor={addressInputId}
-          className="qt-label"
-          style={{
-            width: '65px',
-            textAlign: 'right',
-            fontSize: '12px'
-          }}
-        >
-          {t('send.payTo')}:
-        </label>
+
+      {/* Pay To row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 480px', minWidth: 0 }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <input
             {...register(`recipients.${index}.address`)}
             id={addressInputId}
             type="text"
-            className="qt-input"
             placeholder={t('send.payToPlaceholder')}
+            aria-label={t('send.payTo')}
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
@@ -113,31 +132,24 @@ const RecipientFieldComponent: React.FC<RecipientFieldProps> = ({
             aria-invalid={!!errors?.address || validationStatus.status === 'invalid' || validationStatus.status === 'error'}
             aria-describedby={errors?.address?.message || validationStatus.message ? addressErrorId : undefined}
             style={{
+              ...inputStyle,
               width: '100%',
-              padding: '3px 5px',
-              paddingRight: validationStatus.status !== 'idle' ? '25px' : '5px',
-              fontSize: '11px',
-              backgroundColor: '#2b2b2b',
-              border: `1px solid ${
-                errors?.address ? '#cc0000' :
-                validationStatus.status === 'invalid' || validationStatus.status === 'error' ? '#cc0000' :
-                validationStatus.status === 'valid' ? '#00aa00' :
-                validationStatus.status === 'warning' ? '#ffaa00' :
-                '#1a1a1a'
-              }`,
-              borderRadius: '2px'
+              flex: undefined,
+              paddingRight: validationStatus.status !== 'idle' ? '28px' : '10px',
+              borderColor: addressBorderColor,
             }}
           />
-          {/* Validation status indicator for each recipient */}
           {validationStatus.status !== 'idle' && (
-            <span style={{
-              position: 'absolute',
-              right: '5px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              fontSize: '12px',
-              pointerEvents: 'none'
-            }}>
+            <span
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontSize: '12px',
+                pointerEvents: 'none',
+              }}
+            >
               {validationStatus.status === 'validating' && '⏳'}
               {validationStatus.status === 'valid' && '✓'}
               {validationStatus.status === 'invalid' && '✗'}
@@ -146,152 +158,106 @@ const RecipientFieldComponent: React.FC<RecipientFieldProps> = ({
             </span>
           )}
         </div>
-        <button
-          type="button"
-          className="qt-button-icon"
-          style={{
-            padding: '3px',
-            minWidth: '24px',
-            height: '24px',
-            backgroundColor: '#404040',
-            border: '1px solid #555',
-            borderRadius: '2px'
-          }}
+        {/* Clipboard paste — currently dead UI (no onClick wired in upstream); preserved as
+            visual placeholder. Wiring is tracked as a separate follow-up; see task User Notes. */}
+        <IconButton
+          icon={<Clipboard size={12} />}
           title={t('common:buttons.paste')}
-        >
-          <Clipboard size={12} />
-        </button>
-        <button
-          type="button"
-          className="qt-button-icon"
-          onClick={onAddressBookPick}
-          style={{
-            padding: '3px',
-            minWidth: '24px',
-            height: '24px',
-            backgroundColor: '#404040',
-            border: '1px solid #555',
-            borderRadius: '2px',
-            cursor: 'pointer',
-          }}
-          title={t('common:buttons.addressBook')}
-        >
-          <BookOpen size={12} />
-        </button>
+          ariaLabel={t('common:buttons.paste')}
+          onClick={() => {}}
+        />
+        {onAddressBookPick && (
+          <IconButton
+            icon={<BookOpen size={12} />}
+            title={t('common:buttons.addressBook')}
+            ariaLabel={t('common:buttons.addressBook')}
+            onClick={onAddressBookPick}
+          />
+        )}
         {onSaveToAddressBook && (() => {
           // Enable when address passes async validation OR matches format regex
           // (regex fallback avoids delay when address is populated from picker)
           const addressOk = validationStatus.status === 'valid' || TWINS_ADDRESS_REGEX.test(address);
           const canSave = addressOk && !!label.trim();
           return (
-            <button
-              type="button"
-              className="qt-button-icon"
+            <IconButton
+              icon={<UserPlus size={12} />}
+              title={t('send.saveToAddressBook')}
+              ariaLabel={t('send.saveToAddressBook')}
               onClick={() => onSaveToAddressBook(address, label)}
               disabled={!canSave}
-              style={{
-                padding: '3px',
-                minWidth: '24px',
-                height: '24px',
-                backgroundColor: canSave ? '#404040' : '#333',
-                border: '1px solid #555',
-                borderRadius: '2px',
-                cursor: canSave ? 'pointer' : 'default',
-                opacity: canSave ? 1 : 0.5,
-              }}
-              title={t('send.saveToAddressBook')}
-            >
-              <UserPlus size={12} />
-            </button>
+            />
           );
         })()}
       </div>
 
-      {/* Label Field */}
-      <div className="qt-hbox" style={{ alignItems: 'center', gap: '6px' }}>
-        <label
-          htmlFor={labelInputId}
-          className="qt-label"
-          style={{
-            width: '65px',
-            textAlign: 'right',
-            fontSize: '12px'
-          }}
-        >
-          {t('send.label')}:
-        </label>
-        <input
-          {...register(`recipients.${index}.label`)}
-          id={labelInputId}
-          type="text"
-          className="qt-input"
-          placeholder={t('send.labelPlaceholder')}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          style={{
-            flex: 1,
-            padding: '3px 5px',
-            fontSize: '11px',
-            backgroundColor: '#2b2b2b',
-            border: '1px solid #1a1a1a',
-            borderRadius: '2px'
-          }}
-        />
-      </div>
-
-      {/* Amount Field */}
-      <div className="qt-hbox" style={{ alignItems: 'center', gap: '6px' }}>
-        <label
-          htmlFor={amountInputId}
-          className="qt-label"
-          style={{
-            width: '65px',
-            textAlign: 'right',
-            fontSize: '12px'
-          }}
-        >
-          {t('send.amount')}:
-        </label>
-        <input
-          {...register(`recipients.${index}.amount`)}
-          id={amountInputId}
-          type="text"
-          className="qt-input"
-          placeholder={t('send.amountPlaceholder')}
-          aria-label={t('send.amount')}
-          aria-invalid={!!errors?.amount}
-          style={{
-            flex: 1,
-            padding: '3px 5px',
-            fontSize: '11px',
-            backgroundColor: '#2b2b2b',
-            border: `1px solid ${errors?.amount ? '#cc0000' : '#1a1a1a'}`,
-            borderRadius: '2px'
-          }}
-        />
-        {onUseMaximum && (
-          <button
-            type="button"
-            onClick={onUseMaximum}
-            className="qt-button"
+      {/* Label + Amount row (2-column flex; Send is denser than Receive per research §4.3).
+          flexWrap allows columns to stack on narrow widths / long localized labels rather than
+          clip — parent SendRecipients sets overflowX: 'hidden'. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flex: '1 1 380px', minWidth: 0 }}>
+        {/* Label column */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input
+            {...register(`recipients.${index}.label`)}
+            id={labelInputId}
+            type="text"
+            placeholder={t('send.labelPlaceholder')}
+            aria-label={t('send.label')}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            style={inputStyle}
+          />
+        </div>
+        {/* Amount column */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input
+            {...register(`recipients.${index}.amount`)}
+            id={amountInputId}
+            type="text"
+            placeholder={t('send.amountPlaceholder')}
+            aria-label={t('send.amount')}
+            aria-invalid={!!errors?.amount}
             style={{
-              padding: '2px 6px',
-              fontSize: '10px',
-              backgroundColor: '#404040',
-              border: '1px solid #555',
-              borderRadius: '2px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
+              ...inputStyle,
+              borderColor: errors?.amount ? '#ff6666' : '#3a3a3a',
             }}
-            title={t('send.recipients.useMaximum')}
-          >
-            {t('common:buttons.max')}
-          </button>
-        )}
-        <span className="qt-label" style={{ fontSize: '11px', minWidth: '45px' }}>
-          {t('common:units.twins')}
-        </span>
+          />
+          {onUseMaximum && (
+            <button
+              type="button"
+              onClick={onUseMaximum}
+              title={t('send.recipients.useMaximum')}
+              style={{
+                padding: '4px 8px',
+                fontSize: '10px',
+                backgroundColor: '#383838',
+                border: '1px solid #4a4a4a',
+                borderRadius: '4px',
+                color: '#ccc',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                transition: 'background-color 0.15s, border-color 0.15s, color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#444';
+                e.currentTarget.style.borderColor = '#5a5a5a';
+                e.currentTarget.style.color = '#fff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#383838';
+                e.currentTarget.style.borderColor = '#4a4a4a';
+                e.currentTarget.style.color = '#ccc';
+              }}
+            >
+              {t('common:buttons.max')}
+            </button>
+          )}
+          <span style={{ fontSize: '11px', color: '#888', minWidth: '45px', flexShrink: 0 }}>
+            {t('common:units.twins')}
+          </span>
+        </div>
       </div>
 
       {/* Form validation error messages */}
@@ -300,27 +266,13 @@ const RecipientFieldComponent: React.FC<RecipientFieldProps> = ({
           id={addressErrorId}
           role="alert"
           aria-live="polite"
-          style={{
-            marginLeft: '71px',
-            marginTop: '-4px',
-            fontSize: '11px',
-            color: '#cc0000'
-          }}
+          style={{ ...errorMessageStyle, color: '#ff6666' }}
         >
           {errors.address.message}
         </div>
       )}
       {errors?.amount && (
-        <div
-          role="alert"
-          aria-live="polite"
-          style={{
-            marginLeft: '71px',
-            marginTop: '-4px',
-            fontSize: '11px',
-            color: '#cc0000'
-          }}
-        >
+        <div role="alert" aria-live="polite" style={{ ...errorMessageStyle, color: '#ff6666' }}>
           {errors.amount.message}
         </div>
       )}
@@ -331,11 +283,13 @@ const RecipientFieldComponent: React.FC<RecipientFieldProps> = ({
           role="alert"
           aria-live="polite"
           style={{
-            marginLeft: '71px',
-            marginTop: '-4px',
-            fontSize: '11px',
-            color: validationStatus.status === 'valid' ? '#00aa00' :
-                   validationStatus.status === 'warning' ? '#ffaa00' : '#cc0000'
+            ...errorMessageStyle,
+            color:
+              validationStatus.status === 'valid'
+                ? '#27ae60'
+                : validationStatus.status === 'warning'
+                ? '#ff9966'
+                : '#ff6666',
           }}
         >
           {validationStatus.message}

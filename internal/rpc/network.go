@@ -449,6 +449,15 @@ func (s *Server) getNetworkInfoHandler(req *Request) *Response {
 		"localaddresses":  []interface{}{},
 	}
 
+	// Add TLS status fields (omitted when TLS inactive)
+	if s.tlsManager != nil {
+		result["rpc_tls_active"] = true
+		result["rpc_min_tls_version"] = "TLS1.3"
+	}
+	if !s.config.TLS.Enabled && s.config.AllowPlaintextPublic && !isLoopback(s.config.Host) {
+		result["rpc_plaintext_public"] = true
+	}
+
 	// Add local address if available
 	if stats.LocalAddress != "" {
 		localAddr := map[string]interface{}{

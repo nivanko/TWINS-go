@@ -3,6 +3,8 @@ package cli
 import (
 	"runtime"
 	"testing"
+
+	"github.com/urfave/cli/v2"
 )
 
 func TestNormalizeArgs_Empty(t *testing.T) {
@@ -169,6 +171,140 @@ func TestIsVersionFlag(t *testing.T) {
 		if result != tc.expected {
 			t.Errorf("IsVersionFlag(%q): expected %v, got %v", tc.arg, tc.expected, result)
 		}
+	}
+}
+
+func TestCollectAppFlagInfo(t *testing.T) {
+	flags := []cli.Flag{
+		&cli.StringFlag{Name: "datadir", Aliases: []string{"d"}},
+		&cli.IntFlag{Name: "rpc-port"},
+		&cli.BoolFlag{Name: "rpc-tls"},
+		&cli.DurationFlag{Name: "rpc-timeout"},
+	}
+
+	valueFlags, boolFlags := CollectAppFlagInfo(flags)
+
+	// Value flags
+	if !valueFlags["datadir"] {
+		t.Error("expected datadir in valueFlags")
+	}
+	if !valueFlags["d"] {
+		t.Error("expected alias 'd' in valueFlags")
+	}
+	if !valueFlags["rpc-port"] {
+		t.Error("expected rpc-port in valueFlags")
+	}
+	if !valueFlags["rpc-timeout"] {
+		t.Error("expected rpc-timeout in valueFlags")
+	}
+
+	// Bool flags
+	if !boolFlags["rpc-tls"] {
+		t.Error("expected rpc-tls in boolFlags")
+	}
+
+	// Cross-check
+	if valueFlags["rpc-tls"] {
+		t.Error("rpc-tls should not be in valueFlags")
+	}
+	if boolFlags["datadir"] {
+		t.Error("datadir should not be in boolFlags")
+	}
+}
+
+func TestReorderSubcommandArgs(t *testing.T) {
+	valueFlags := map[string]bool{"datadir": true, "d": true, "rpc-host": true, "rpc-port": true}
+	boolFlags := map[string]bool{"rpc-tls": true}
+
+	testCases := []struct {
+		name     string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "flag after positional arg (=form)",
+			args:     []string{"twins-cli", "rpc-cert-fingerprint", "cert.crt", "--datadir=/path"},
+			expected: []string{"twins-cli", "rpc-cert-fingerprint", "--datadir=/path", "cert.crt"},
+		},
+		{
+			name:     "flag after positional arg (space form)",
+			args:     []string{"twins-cli", "getblock", "abc123", "--rpc-host", "1.2.3.4"},
+			expected: []string{"twins-cli", "getblock", "--rpc-host", "1.2.3.4", "abc123"},
+		},
+		{
+			name:     "flag before positional arg (already correct)",
+			args:     []string{"twins-cli", "rpc-cert-fingerprint", "--datadir=/path", "cert.crt"},
+			expected: []string{"twins-cli", "rpc-cert-fingerprint", "--datadir=/path", "cert.crt"},
+		},
+		{
+			name:     "flag before command (untouched)",
+			args:     []string{"twins-cli", "--datadir=/path", "rpc-cert-fingerprint", "cert.crt"},
+			expected: []string{"twins-cli", "--datadir=/path", "rpc-cert-fingerprint", "cert.crt"},
+		},
+		{
+			name:     "multiple flags mixed with args",
+			args:     []string{"twins-cli", "sendtoaddress", "addr1", "100", "--rpc-host", "1.2.3.4", "--rpc-tls", "--datadir=/path"},
+			expected: []string{"twins-cli", "sendtoaddress", "--rpc-host", "1.2.3.4", "--rpc-tls", "--datadir=/path", "addr1", "100"},
+		},
+		{
+			name:     "bool flag after positional",
+			args:     []string{"twins-cli", "getinfo", "--rpc-tls"},
+			expected: []string{"twins-cli", "getinfo", "--rpc-tls"},
+		},
+		{
+			name:     "alias flag after positional",
+			args:     []string{"twins-cli", "getblock", "abc123", "-d", "/path"},
+			expected: []string{"twins-cli", "getblock", "-d", "/path", "abc123"},
+		},
+		{
+			name:     "double dash terminates reordering",
+			args:     []string{"twins-cli", "cmd", "arg1", "--", "--datadir=/path"},
+			expected: []string{"twins-cli", "cmd", "arg1", "--", "--datadir=/path"},
+		},
+		{
+			name:     "unrecognized flag treated as positional",
+			args:     []string{"twins-cli", "cmd", "arg1", "--unknown=val"},
+			expected: []string{"twins-cli", "cmd", "arg1", "--unknown=val"},
+		},
+		{
+			name:     "no subcommand (just program)",
+			args:     []string{"twins-cli"},
+			expected: []string{"twins-cli"},
+		},
+		{
+			name:     "program and subcommand only",
+			args:     []string{"twins-cli", "getinfo"},
+			expected: []string{"twins-cli", "getinfo"},
+		},
+		{
+			name:     "empty args",
+			args:     []string{},
+			expected: []string{},
+		},
+		{
+			name:     "flags interleaved with multiple positional args",
+			args:     []string{"twins-cli", "cmd", "pos1", "--datadir=/a", "pos2", "--rpc-port", "9999", "pos3"},
+			expected: []string{"twins-cli", "cmd", "--datadir=/a", "--rpc-port", "9999", "pos1", "pos2", "pos3"},
+		},
+		{
+			name:     "app flag before subcommand with space value",
+			args:     []string{"twins-cli", "--rpc-host", "1.2.3.4", "getblock", "abc123", "--datadir=/path"},
+			expected: []string{"twins-cli", "--rpc-host", "1.2.3.4", "getblock", "--datadir=/path", "abc123"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ReorderSubcommandArgs(tc.args, valueFlags, boolFlags)
+			if len(result) != len(tc.expected) {
+				t.Fatalf("expected %d args %v, got %d args %v", len(tc.expected), tc.expected, len(result), result)
+			}
+			for i, exp := range tc.expected {
+				if result[i] != exp {
+					t.Errorf("arg %d: expected %q, got %q\n  full result: %v", i, exp, result[i], result)
+				}
+			}
+		})
 	}
 }
 

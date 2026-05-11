@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sirupsen/logrus"
 
@@ -61,7 +62,11 @@ type Node struct {
 	Mempool         mempool.Mempool
 	Masternode      *masternode.Manager
 	Spork           *spork.Manager
-	DebugCollector  *debug.Collector          // Masternode debug event collector (nil when disabled)
+	// DebugCollector is the masternode debug event collector (nil-pointer when disabled).
+	// Stored as atomic.Pointer so GUI handlers and other lock-free readers can
+	// observe the current collector without taking n.mu, while the subscriber
+	// path still uses n.mu for ordering with shuttingDown.
+	DebugCollector  atomic.Pointer[debug.Collector]
 	PaymentTracker  *masternode.PaymentTracker // In-memory masternode payment statistics
 
 	// Configuration authority (optional, nil for GUI until Phase 3)
@@ -75,10 +80,11 @@ type Node struct {
 	MasternodeConf *masternode.MasternodeConfFile
 
 	// Internal
-	mu           sync.RWMutex
-	shutdownOnce sync.Once
-	rpcConfig    *rpc.Config // Stored for cleanup during shutdown
-	logger       *logrus.Entry
+	mu            sync.RWMutex
+	shutdownOnce  sync.Once
+	shuttingDown  atomic.Bool // Set true at the start of doShutdown so post-shutdown subscriber callbacks can bail out before allocating new resources
+	rpcConfig     *rpc.Config // Stored for cleanup during shutdown
+	logger        *logrus.Entry
 }
 
 // NewNode creates a Node with all core components initialized.
@@ -304,7 +310,7 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 		if err := collector.Enable(); err != nil {
 			logger.WithError(err).Warn("Failed to enable masternode debug collector (non-fatal)")
 		} else {
-			n.DebugCollector = collector
+			n.DebugCollector.Store(collector)
 			mnManager.SetDebugCollector(collector)
 			logger.Info("Masternode debug collector enabled")
 		}

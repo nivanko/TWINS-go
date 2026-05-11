@@ -2754,6 +2754,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 	// Legacy: if (!masternodeSync.IsBlockchainSynced()) return;
 	// Reject all masternode broadcasts during IBD to prevent processing stale data
 	if m.syncManager != nil && !m.syncManager.IsBlockchainSynced() {
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitBroadcast(debug.TypeBroadcastSkipped, source, fmt.Sprintf("Broadcast skipped for %s during IBD", mnb.OutPoint.String()), map[string]any{
+				"outpoint": mnb.OutPoint.String(),
+				"addr":     mnb.Addr.String(),
+				"payee":    debugPayee,
+				"reason":   "ibd_gate",
+			})
+		}
 		return nil // Silent reject during IBD, not an error
 	}
 
@@ -2774,6 +2782,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 			m.syncManager.AddedMasternodeList(bcHash)
 		}
 		m.logger.WithField("hash", bcHash.String()).Debug("Skipping duplicate broadcast")
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitBroadcast(debug.TypeBroadcastSkipped, source, fmt.Sprintf("Broadcast skipped for %s (already seen)", mnb.OutPoint.String()), map[string]any{
+				"outpoint": mnb.OutPoint.String(),
+				"addr":     mnb.Addr.String(),
+				"payee":    debugPayee,
+				"reason":   "already_seen",
+			})
+		}
 		return ErrBroadcastAlreadySeen // Distinguishable from nil so callers know not to relay
 	}
 
@@ -2811,6 +2827,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 		if validationResult.ShouldSkip {
 			// Skip processing but don't return error (e.g., duplicate broadcast)
 			m.logger.WithField("reason", validationResult.Error).Debug("Skipping broadcast")
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastSkipped, source, fmt.Sprintf("Broadcast skipped for %s: %s", mnb.OutPoint.String(), validationResult.Error), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   validationResult.Error,
+				})
+			}
 			return nil
 		}
 
@@ -2849,6 +2873,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 				if m.syncManager != nil {
 					m.syncManager.AddedMasternodeList(bcHash)
 				}
+				if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+					dc.EmitBroadcast(debug.TypeBroadcastSkipped, source, fmt.Sprintf("Broadcast skipped for %s (self-broadcast from local active masternode)", mnb.OutPoint.String()), map[string]any{
+						"outpoint": mnb.OutPoint.String(),
+						"addr":     mnb.Addr.String(),
+						"payee":    debugPayee,
+						"reason":   "self_broadcast",
+					})
+				}
 				return nil
 			}
 		}
@@ -2865,6 +2897,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 	if existingMN != nil {
 		// Check if existing MN was recently broadcasted (within MIN_MNB_SECONDS of current time)
 		if existingMN.IsBroadcastedWithin(MinBroadcastSeconds) {
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: existing MN broadcasted within %d seconds", mnb.OutPoint.String(), MinBroadcastSeconds), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "recent_broadcast",
+				})
+			}
 			return fmt.Errorf("existing masternode was broadcasted within %d seconds, update rejected",
 				MinBroadcastSeconds)
 		}
@@ -2890,11 +2930,28 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 				"outpoint": mnb.OutPoint.String(),
 				"hash":     bcHash.String(),
 			}).Warn("Broadcast removed from seen (collateral TX not found, will retry)")
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: collateral TX not found", mnb.OutPoint.String()), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "collateral_tx_not_found",
+					"error":    err.Error(),
+				})
+			}
 			return fmt.Errorf("collateral transaction %s not found: %w", mnb.OutPoint.Hash.String(), err)
 		}
 
 		// Extract output value from the outpoint index
 		if int(mnb.OutPoint.Index) >= len(tx.Outputs) {
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: outpoint index %d out of range (tx has %d outputs)", mnb.OutPoint.String(), mnb.OutPoint.Index, len(tx.Outputs)), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "outpoint_index_out_of_range",
+				})
+			}
 			return fmt.Errorf("outpoint index %d out of range (tx has %d outputs)",
 				mnb.OutPoint.Index, len(tx.Outputs))
 		}
@@ -2953,6 +3010,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 			if err == nil && confBlock != nil {
 				confBlockTime := int64(confBlock.Header.Timestamp)
 				if confBlockTime > mnb.SigTime {
+					if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+						dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: sigTime %d before collateral maturity block time %d", mnb.OutPoint.String(), mnb.SigTime, confBlockTime), map[string]any{
+							"outpoint": mnb.OutPoint.String(),
+							"addr":     mnb.Addr.String(),
+							"payee":    debugPayee,
+							"reason":   "sigtime_before_collateral_maturity",
+						})
+					}
 					return fmt.Errorf("bad sigTime %d for masternode %s (%d conf block at height %d has time %d)",
 						mnb.SigTime, mnb.OutPoint.String(), MinConfirmations, confBlockHeight, confBlockTime)
 				}
@@ -2974,11 +3039,28 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 				"outpoint": mnb.OutPoint.String(),
 				"hash":     bcHash.String(),
 			}).Warn("Broadcast removed from seen (UTXO lookup failed, will retry)")
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: UTXO lookup failed", mnb.OutPoint.String()), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "utxo_lookup_failed",
+					"error":    err.Error(),
+				})
+			}
 			return fmt.Errorf("%w: %w", ErrCollateralSpent, err)
 		}
 		if utxo == nil {
 			// nil UTXO without error = collateral definitively spent — permanent rejection
 			// Do NOT clean seenBroadcasts here (DoS protection, matches C++ behavior)
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: collateral spent", mnb.OutPoint.String()), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "collateral_spent",
+				})
+			}
 			return ErrCollateralSpent
 		}
 
@@ -2987,6 +3069,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 		// This prevents attacker from registering masternode using someone else's UTXO
 		// by supplying their own pubkey while pointing to victim's collateral
 		if mnb.PubKeyCollateral == nil {
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: missing PubKeyCollateral", mnb.OutPoint.String()), map[string]any{
+					"outpoint": mnb.OutPoint.String(),
+					"addr":     mnb.Addr.String(),
+					"payee":    debugPayee,
+					"reason":   "missing_pubkey_collateral",
+				})
+			}
 			return fmt.Errorf("broadcast missing required PubKeyCollateral")
 		}
 		{
@@ -3009,6 +3099,15 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 					"expected_script": fmt.Sprintf("%x", expectedScript),
 					"actual_script":   fmt.Sprintf("%x", actualScript),
 				}).Warn("Broadcast rejected: vin not associated with pubkey")
+				if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+					dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: vin not associated with pubkey", mnb.OutPoint.String()), map[string]any{
+						"outpoint": mnb.OutPoint.String(),
+						"addr":     mnb.Addr.String(),
+						"payee":    debugPayee,
+						"reason":   "vin_pubkey_mismatch",
+						"dos":      33,
+					})
+				}
 				return fmt.Errorf("vin not associated with pubkey: script mismatch")
 			}
 		}
@@ -3016,6 +3115,16 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 		// 8. Derive tier from collateral amount with spork-aware validation
 		derivedTier, err := m.validateCollateralWithSpork(collateral)
 		if err != nil {
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: invalid collateral (%d)", mnb.OutPoint.String(), collateral), map[string]any{
+					"outpoint":   mnb.OutPoint.String(),
+					"addr":       mnb.Addr.String(),
+					"payee":      debugPayee,
+					"reason":     "invalid_collateral",
+					"collateral": collateral,
+					"error":      err.Error(),
+				})
+			}
 			return fmt.Errorf("invalid collateral for masternode: %w", err)
 		}
 
@@ -3031,6 +3140,14 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 		m.seenBroadcastsMu.Lock()
 		delete(m.seenBroadcasts, bcHash)
 		m.seenBroadcastsMu.Unlock()
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitBroadcast(debug.TypeBroadcastSkipped, source, fmt.Sprintf("Broadcast skipped for %s: blockchain unavailable", mnb.OutPoint.String()), map[string]any{
+				"outpoint": mnb.OutPoint.String(),
+				"addr":     mnb.Addr.String(),
+				"payee":    debugPayee,
+				"reason":   "blockchain_unavailable",
+			})
+		}
 		return fmt.Errorf("blockchain not available for collateral validation")
 	}
 
@@ -3106,6 +3223,15 @@ func (m *Manager) ProcessBroadcast(mnb *MasternodeBroadcast, originAddr string) 
 	}
 
 	if addErr != nil {
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitBroadcast(debug.TypeBroadcastRejected, source, fmt.Sprintf("Broadcast rejected for %s: add/update failed: %v", mnb.OutPoint.String(), addErr), map[string]any{
+				"outpoint": mnb.OutPoint.String(),
+				"addr":     mnb.Addr.String(),
+				"payee":    debugPayee,
+				"reason":   "add_or_update_failed",
+				"error":    addErr.Error(),
+			})
+		}
 		return addErr
 	}
 
@@ -3193,6 +3319,13 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 			m.logger.WithField("outpoint", mnp.OutPoint.String()).
 				Warn("Local masternode ping dropped - blockchain not synced (IBD)")
 		}
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingSkipped, peerAddr, fmt.Sprintf("Ping skipped for %s during IBD", mnp.OutPoint.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "ibd_gate",
+			})
+		}
 		return nil // Silent reject during IBD, not an error
 	}
 
@@ -3216,6 +3349,13 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 			"outpoint":  mnp.OutPoint.String(),
 			"peer_addr": peerAddr,
 		}).Debug("Ping already seen (dedup) - skipping")
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingSkipped, peerAddr, fmt.Sprintf("Ping skipped for %s (already seen)", mnp.OutPoint.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "already_seen",
+			})
+		}
 		return nil
 	}
 	// Insert dedup marker immediately after duplicate check (matches legacy semantics:
@@ -3231,6 +3371,14 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 		if m.misbehaviorFunc != nil {
 			m.misbehaviorFunc(peerAddr, 1, "ping sigTime too far in future")
 		}
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: sigTime %d too far in future", mnp.OutPoint.String(), mnp.SigTime), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "sigtime_too_new",
+				"dos":      1,
+			})
+		}
 		return fmt.Errorf("ping sigTime %d is too far in the future (now=%d, max drift=%d)",
 			mnp.SigTime, currentTime, PingTimeTolerance)
 	}
@@ -3238,6 +3386,14 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 		// Misbehaving with DoS=1 (legacy masternode.cpp:825)
 		if m.misbehaviorFunc != nil {
 			m.misbehaviorFunc(peerAddr, 1, "ping sigTime too far in past")
+		}
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: sigTime %d too far in past", mnp.OutPoint.String(), mnp.SigTime), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "sigtime_too_old",
+				"dos":      1,
+			})
 		}
 		return fmt.Errorf("ping sigTime %d is too far in the past (now=%d, max drift=%d)",
 			mnp.SigTime, currentTime, PingTimeTolerance)
@@ -3258,6 +3414,13 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 		if askForMN != nil {
 			askForMN(mnp.OutPoint)
 		}
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: masternode not found", mnp.OutPoint.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "masternode_not_found",
+			})
+		}
 		return fmt.Errorf("%w: %w", ErrMasternodeNotFound, err)
 	}
 
@@ -3269,6 +3432,14 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 	mnProtocol := mn.Protocol
 	mn.mu.RUnlock()
 	if mnProtocol < minProto {
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: protocol %d below minimum %d", mnp.OutPoint.String(), mnProtocol, minProto), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "protocol_too_old",
+				"protocol": mnProtocol,
+			})
+		}
 		return fmt.Errorf("%w: %d < %d", ErrInvalidProtocol, mnProtocol, minProto)
 	}
 
@@ -3283,6 +3454,14 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 	currentStatus := mn.Status
 	mn.mu.RUnlock()
 	if currentStatus != StatusEnabled && currentStatus != StatusPreEnabled && currentStatus != StatusExpired {
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: masternode not eligible (status=%s)", mnp.OutPoint.String(), currentStatus.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "masternode_disabled",
+				"status":   currentStatus.String(),
+			})
+		}
 		return fmt.Errorf("ping rejected from non-enabled masternode (status: %s)", currentStatus.String())
 	}
 
@@ -3298,6 +3477,13 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 	if lastPingSigTime != nil {
 		timeSinceLastPing := mnp.SigTime - lastPingSigTime.SigTime
 		if timeSinceLastPing < pingSpacingThreshold {
+			if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+				dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: spacing violation (%d seconds, need %d)", mnp.OutPoint.String(), timeSinceLastPing, pingSpacingThreshold), map[string]any{
+					"outpoint": mnp.OutPoint.String(),
+					"sig_time": mnp.SigTime,
+					"reason":   "spacing_violation",
+				})
+			}
 			return fmt.Errorf("ping too soon: %d seconds since last ping, minimum %d required",
 				timeSinceLastPing, pingSpacingThreshold)
 		}
@@ -3315,9 +3501,25 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 		} else {
 			blockHeight, err := m.blockchain.GetBlockHeight(mnp.BlockHash)
 			if err != nil {
+				if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+					dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: blockHash %s not found in chain", mnp.OutPoint.String(), mnp.BlockHash.String()), map[string]any{
+						"outpoint":   mnp.OutPoint.String(),
+						"sig_time":   mnp.SigTime,
+						"block_hash": mnp.BlockHash.String(),
+						"reason":     "blockhash_unknown",
+					})
+				}
 				return fmt.Errorf("ping blockHash %s not found in chain", mnp.BlockHash.String())
 			}
 			if currentHeight-blockHeight > PingBlockHashMaxDepth {
+				if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+					dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: blockHash too old (height %d, current %d, max age %d)", mnp.OutPoint.String(), blockHeight, currentHeight, PingBlockHashMaxDepth), map[string]any{
+						"outpoint":   mnp.OutPoint.String(),
+						"sig_time":   mnp.SigTime,
+						"block_hash": mnp.BlockHash.String(),
+						"reason":     "blockhash_too_old",
+					})
+				}
 				return fmt.Errorf("ping blockHash is too old: height %d, current %d, max age %d blocks",
 					blockHeight, currentHeight, PingBlockHashMaxDepth)
 			}
@@ -3329,6 +3531,15 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 		// Misbehaving with DoS=33 (legacy masternode.cpp:809)
 		if m.misbehaviorFunc != nil {
 			m.misbehaviorFunc(peerAddr, 33, "invalid ping signature")
+		}
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: invalid signature", mnp.OutPoint.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "signature_invalid",
+				"dos":      33,
+				"error":    err.Error(),
+			})
 		}
 		return fmt.Errorf("invalid ping signature: %w", err)
 	}
@@ -3379,6 +3590,14 @@ func (m *Manager) ProcessPing(mnp *MasternodePing, peerAddr string) error {
 			"status":    status.String(),
 			"peer_addr": peerAddr,
 		}).Warn("Ping rejected: masternode not enabled after post-ping status update")
+		if dc := m.debugCollector.Load(); dc != nil && dc.IsEnabled() {
+			dc.EmitPing(debug.TypePingRejected, peerAddr, fmt.Sprintf("Ping rejected for %s: masternode not enabled after status update (status=%s)", mnp.OutPoint.String(), status.String()), map[string]any{
+				"outpoint": mnp.OutPoint.String(),
+				"sig_time": mnp.SigTime,
+				"reason":   "masternode_disabled_post_update",
+				"status":   status.String(),
+			})
+		}
 		return fmt.Errorf("masternode not enabled after ping update (status: %s)", status.String())
 	}
 

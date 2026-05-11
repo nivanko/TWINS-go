@@ -2533,6 +2533,8 @@ func (s *Server) RequestMasternodeList() (int, int, error) {
 			if s.mnManager != nil {
 				s.mnManager.FulfilledRequest(peerAddr, "mnsync")
 			}
+			// N-1: emit outbound dseg request event (empty outpoint = full-list request).
+			s.emitDSEGRequest(peerAddr, "", "out", 0)
 		}
 		return true
 	})

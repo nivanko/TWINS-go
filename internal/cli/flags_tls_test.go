@@ -129,3 +129,60 @@ func TestTLSFlagDefaults(t *testing.T) {
 		t.Errorf("flag --rpc-tls-expiry-warn-days default = %d, want 30", intFlag.Value)
 	}
 }
+
+// TestRPCClientTLSFlags verifies the client-side TLS flags in CommonRPCClientFlags.
+func TestRPCClientTLSFlags(t *testing.T) {
+	flags := CommonRPCClientFlags()
+
+	flagMap := make(map[string]urfave.Flag)
+	for _, f := range flags {
+		names := f.Names()
+		if len(names) > 0 {
+			flagMap[names[0]] = f
+		}
+	}
+
+	// rpc-tls bool flag
+	tlsFlag, ok := flagMap["rpc-tls"]
+	if !ok {
+		t.Fatal("flag --rpc-tls not found in CommonRPCClientFlags()")
+	}
+	bf, ok := tlsFlag.(*urfave.BoolFlag)
+	if !ok {
+		t.Fatal("flag --rpc-tls is not a BoolFlag")
+	}
+	if bf.Value != false {
+		t.Error("flag --rpc-tls should default to false")
+	}
+
+	// rpc-tls-ca replaces old rpc-cert
+	caFlag, ok := flagMap["rpc-tls-ca"]
+	if !ok {
+		t.Fatal("flag --rpc-tls-ca not found in CommonRPCClientFlags()")
+	}
+	sf, ok := caFlag.(*urfave.StringFlag)
+	if !ok {
+		t.Fatal("flag --rpc-tls-ca is not a StringFlag")
+	}
+	if sf.EnvVars[0] != "TWINS_RPC_TLS_CA" {
+		t.Errorf("flag --rpc-tls-ca env var = %s, want TWINS_RPC_TLS_CA", sf.EnvVars[0])
+	}
+
+	// rpc-tls-pin new flag
+	pinFlag, ok := flagMap["rpc-tls-pin"]
+	if !ok {
+		t.Fatal("flag --rpc-tls-pin not found in CommonRPCClientFlags()")
+	}
+	pf, ok := pinFlag.(*urfave.StringFlag)
+	if !ok {
+		t.Fatal("flag --rpc-tls-pin is not a StringFlag")
+	}
+	if pf.EnvVars[0] != "TWINS_RPC_TLS_PIN" {
+		t.Errorf("flag --rpc-tls-pin env var = %s, want TWINS_RPC_TLS_PIN", pf.EnvVars[0])
+	}
+
+	// old rpc-cert should NOT exist
+	if _, exists := flagMap["rpc-cert"]; exists {
+		t.Error("legacy flag --rpc-cert should have been replaced by --rpc-tls-ca")
+	}
+}

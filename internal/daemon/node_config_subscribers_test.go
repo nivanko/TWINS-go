@@ -88,3 +88,70 @@ func TestWireConfigSubscribers_StakingEnabled(t *testing.T) {
 		t.Fatalf("Set staking.enabled=false failed: %v", err)
 	}
 }
+
+func TestWireConfigSubscribers_MasternodeDebug_NilManager(t *testing.T) {
+	// Verify the masternode.debug subscriber gracefully no-ops when Node.Masternode
+	// is nil instead of panicking. This is the path the GUI hits during early
+	// startup if a config change races with InitWallet/LoadMasternodeCache.
+	tmpDir := t.TempDir()
+	yamlPath := filepath.Join(tmpDir, "twinsd.yml")
+	logger := logrus.NewEntry(logrus.StandardLogger())
+
+	cm := config.NewConfigManager(yamlPath, logger)
+	if err := cm.LoadOrCreate(); err != nil {
+		t.Fatalf("LoadOrCreate failed: %v", err)
+	}
+
+	n := &Node{
+		ConfigManager: cm,
+		logger:        logger,
+		Config:        NodeConfig{DataDir: tmpDir},
+	}
+	n.WireConfigSubscribers()
+
+	// Toggling either way must not panic when Masternode manager is nil.
+	if err := cm.Set("masternode.debug", true); err != nil {
+		t.Fatalf("Set masternode.debug=true failed: %v", err)
+	}
+	if err := cm.Set("masternode.debug", false); err != nil {
+		t.Fatalf("Set masternode.debug=false failed: %v", err)
+	}
+
+	// DebugCollector must remain nil — the subscriber bails out before constructing
+	// a collector when there is no Masternode manager to wire it into.
+	if dc := n.DebugCollector.Load(); dc != nil {
+		t.Errorf("expected DebugCollector to remain nil when Masternode manager is nil, got %v", dc)
+	}
+}
+
+func TestMasternodeDebugSetting_IsHotReloadable(t *testing.T) {
+	// Lock in the registry contract: masternode.debug must be hot-reloadable so
+	// the subscriber actually fires on Set(). debugMaxMB / debugMaxFiles must
+	// remain restart-only (changing the rotation policy at runtime is out of scope).
+	tmpDir := t.TempDir()
+	yamlPath := filepath.Join(tmpDir, "twinsd.yml")
+	logger := logrus.NewEntry(logrus.StandardLogger())
+
+	cm := config.NewConfigManager(yamlPath, logger)
+	if err := cm.LoadOrCreate(); err != nil {
+		t.Fatalf("LoadOrCreate failed: %v", err)
+	}
+
+	meta := cm.GetAllMetadata()
+	want := map[string]bool{
+		"masternode.debug":         true,
+		"masternode.debugMaxMB":    false,
+		"masternode.debugMaxFiles": false,
+	}
+	for _, m := range meta {
+		if expected, tracked := want[m.Key]; tracked {
+			if m.HotReload != expected {
+				t.Errorf("%s: HotReload=%v, want %v", m.Key, m.HotReload, expected)
+			}
+			delete(want, m.Key)
+		}
+	}
+	for k := range want {
+		t.Errorf("setting %s not found in metadata", k)
+	}
+}

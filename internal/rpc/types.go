@@ -9,10 +9,11 @@ import (
 
 // Request represents a JSON-RPC 2.0 request
 type Request struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	ID      interface{}     `json:"id"`
+	JSONRPC    string          `json:"jsonrpc"`
+	Method     string          `json:"method"`
+	Params     json.RawMessage `json:"params,omitempty"`
+	ID         interface{}     `json:"id"`
+	RemoteAddr string          `json:"-"` // Set by handleRequest from http.Request.RemoteAddr
 }
 
 // Response represents a JSON-RPC 2.0 response

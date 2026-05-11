@@ -233,7 +233,10 @@ func TestExtractIP(t *testing.T) {
 	}{
 		{"192.168.1.1:12345", "192.168.1.1"},
 		{"10.0.0.1:80", "10.0.0.1"},
-		{"[::1]:8080", "::1"},
+		{"[::1]:8080", "::"},                                                  // IPv6 loopback masked to /64
+		{"[2001:db8::1]:8080", "2001:db8::"},                                  // IPv6 masked to /64
+		{"[2001:db8:abcd:1234:5678:9abc:def0:1]:443", "2001:db8:abcd:1234::"}, // Full IPv6 masked to /64
+		{"2001:db8::1", "2001:db8::"},           // Bare IPv6 without port (SplitHostPort fails, normalizeIP still masks to /64)
 		{"invalid-no-port", "invalid-no-port"},
 	}
 
@@ -244,5 +247,74 @@ func TestExtractIP(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("extractIP(%q) = %q, want %q", tt.remoteAddr, got, tt.expected)
 		}
+	}
+}
+
+func TestNormalizeIP(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		expected string
+	}{
+		// IPv4: returned as-is
+		{"ipv4", "192.168.1.1", "192.168.1.1"},
+		{"ipv4 loopback", "127.0.0.1", "127.0.0.1"},
+
+		// IPv6: masked to /64
+		{"ipv6 loopback", "::1", "::"},
+		{"ipv6 simple", "2001:db8::1", "2001:db8::"},
+		{"ipv6 full", "2001:db8:abcd:1234:5678:9abc:def0:1", "2001:db8:abcd:1234::"},
+
+		// Same /64 prefix must produce same key
+		{"ipv6 /64 peer A", "2001:db8::1", "2001:db8::"},
+		{"ipv6 /64 peer B", "2001:db8::2", "2001:db8::"},
+		{"ipv6 /64 peer C", "2001:db8::ffff", "2001:db8::"},
+
+		// Different /64 prefixes produce different keys
+		{"ipv6 different /64", "2001:db8:1::1", "2001:db8:1::"},
+
+		// Invalid: returned as-is
+		{"invalid", "not-an-ip", "not-an-ip"},
+		{"empty", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeIP(tt.ip)
+			if got != tt.expected {
+				t.Errorf("normalizeIP(%q) = %q, want %q", tt.ip, got, tt.expected)
+			}
+		})
+	}
+
+	// Verify same-bucket property: two addresses in the same /64 produce identical keys
+	a := normalizeIP("2001:db8::1")
+	b := normalizeIP("2001:db8::2")
+	if a != b {
+		t.Errorf("2001:db8::1 and 2001:db8::2 should share same bucket, got %q vs %q", a, b)
+	}
+}
+
+func TestRateLimiterIPv6SameBucket(t *testing.T) {
+	rl := NewRateLimiter(2, logrus.NewEntry(logrus.New()))
+
+	// Use normalized IPs (as extractIP would produce)
+	ip := normalizeIP("2001:db8::1")
+
+	// Exhaust the bucket from "address 1"
+	if !rl.Allow(ip) {
+		t.Fatal("first request should be allowed")
+	}
+	if !rl.Allow(ip) {
+		t.Fatal("second request should be allowed")
+	}
+
+	// "Address 2" in the same /64 should be blocked (same bucket)
+	ip2 := normalizeIP("2001:db8::2")
+	if ip != ip2 {
+		t.Fatalf("expected same normalized IP, got %q vs %q", ip, ip2)
+	}
+	if rl.Allow(ip2) {
+		t.Fatal("third request from same /64 should be rejected")
 	}
 }

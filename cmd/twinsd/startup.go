@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,8 +98,15 @@ func startDaemonImproved(c *cli.Context) error {
 		"config":   cm.YAMLPath(),
 	}).Debug("Configuration loaded")
 
-	// Create main context
-	ctx, cancel := twinslib.CreateShutdownContext()
+	// Create signal handler directly (not via CreateShutdownContext) so we can
+	// wire SetReloadFunc for SIGHUP → TLS cert reload after RPC initialization.
+	sh := twinslib.NewSignalHandler()
+	sh.Start()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-sh.Shutdown()
+		cancel()
+	}()
 	defer cancel()
 
 	var shutdownOnce sync.Once
@@ -179,6 +187,14 @@ func startDaemonImproved(c *cli.Context) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// Wire SIGHUP → TLS certificate reload (if TLS is active)
+	if node.RPCServer != nil {
+		if tm := node.RPCServer.GetTLSManager(); tm != nil {
+			sh.SetReloadFunc(tm.Reload)
+			logger.Info("SIGHUP wired to TLS certificate reload")
+		}
 	}
 
 	// All components started successfully

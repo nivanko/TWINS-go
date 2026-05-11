@@ -28,9 +28,14 @@ const (
 	TypeBroadcastAccepted = "broadcast_accepted"
 	TypeBroadcastRejected = "broadcast_rejected"
 	TypeBroadcastDedup    = "broadcast_dedup"
+	TypeBroadcastSkipped  = "broadcast_skipped"
 
 	// Ping events
 	TypePingStageResult = "ping_stage_result"
+	TypePingReceived    = "ping_received"
+	TypePingAccepted    = "ping_accepted"
+	TypePingRejected    = "ping_rejected"
+	TypePingSkipped     = "ping_skipped"
 
 	// Status events
 	TypeStatusUpdate = "status_update"
@@ -70,6 +75,40 @@ type Stats struct {
 	Enabled    bool             `json:"enabled"`
 }
 
+// QueryResult bundles paginated events from a cross-file Query() scan with
+// honest count metadata so callers can render "X of Y matching" and
+// truncation indicators without re-counting.
+//
+// TotalMatched: number of events matching the filter across ALL scanned
+// files (not capped by Filter.Limit).
+// TotalScanned: number of events scanned across ALL files (filter-independent).
+// ByCategory: category breakdown of matched events.
+// Truncated: true when TotalMatched > len(Events). Direction of dropped
+// matches depends on Filter.Newest:
+//   - Newest=true (caller wants most-recent N): the OLDER matches were
+//     dropped via ring-buffer trim during scan.
+//   - Newest=false (caller wants oldest N): the NEWER matches were not
+//     appended once the limit was reached, but still counted into
+//     TotalMatched / ByCategory.
+// The GUI Banner copy ("Showing most recent N of M matching events") is
+// Newest=true-specific; downstream callers passing Newest=false should
+// render their own copy.
+// FilesScanned: number of JSONL files actually opened (rotated + active).
+// FileSize: cross-file `os.Stat` sum across every JSONL file the scan walked
+// (mirrors `Summary.FileSize`). Exposed on QueryResult so the GUI Events
+// sub-tab has a fresh cross-file file-size source — `Summary.FileSize`
+// goes stale while the Events sub-tab is mounted (`fetchSummary` is gated
+// to Overview to avoid expensive cross-file rescans on every 3s tick).
+type QueryResult struct {
+	Events       []Event          `json:"events"`
+	TotalMatched int64            `json:"totalMatched"`
+	TotalScanned int64            `json:"totalScanned"`
+	ByCategory   map[string]int64 `json:"byCategory"`
+	Truncated    bool             `json:"truncated"`
+	FilesScanned int              `json:"filesScanned"`
+	FileSize     int64            `json:"fileSize"`
+}
+
 // Summary contains aggregated insights computed from all debug events.
 type Summary struct {
 	// Overview
@@ -84,6 +123,7 @@ type Summary struct {
 	BroadcastAccepted int64              `json:"broadcastAccepted"`
 	BroadcastRejected int64              `json:"broadcastRejected"`
 	BroadcastDedup    int64              `json:"broadcastDedup"`
+	BroadcastSkipped  int64              `json:"broadcastSkipped"`
 	AcceptRate        float64            `json:"acceptRate"` // percentage
 	RejectReasons     []ReasonCount      `json:"rejectReasons"`
 	UniqueMasternodes int64              `json:"uniqueMasternodes"`
@@ -94,6 +134,7 @@ type Summary struct {
 	PingReceived       int64   `json:"pingReceived"`
 	PingAccepted       int64   `json:"pingAccepted"`
 	PingFailed         int64   `json:"pingFailed"`
+	PingSkipped        int64   `json:"pingSkipped"`
 	PingAcceptRate     float64 `json:"pingAcceptRate"`
 	ActivePingsSent    int64   `json:"activePingsSent"`
 	ActivePingsSuccess int64   `json:"activePingsSuccess"`

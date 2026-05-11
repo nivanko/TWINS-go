@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ func (s *Server) registerControlHandlers() {
 	s.RegisterHandler("stop", s.handleStop)
 	s.RegisterHandler("help", s.handleHelp)
 	s.RegisterHandler("setloglevel", s.handleSetLogLevel)
+	s.RegisterHandler("reloadrpccerts", s.handleReloadRPCCerts)
 }
 
 // SetShutdownFunc sets the shutdown callback function
@@ -93,6 +96,16 @@ func (s *Server) handleHelp(req *Request) *Response {
 // commandHelpTexts is the package-level map of RPC command help texts.
 // Exported via GetCommandHelp() and GetCommandBriefDescriptions().
 var commandHelpTexts = map[string]string{
+		"reloadrpccerts": "reloadrpccerts \"passphrase\"\n\n" +
+			"Reload TLS certificates for the RPC server (Windows/container fallback for SIGHUP).\n" +
+			"Requires rpc.tls.reload_passphrase_file to be configured with an argon2id hash file.\n\n" +
+			"WARNING: reload_passphrase MUST NOT be the same as your wallet passphrase.\n\n" +
+			"Arguments:\n" +
+			"1. \"passphrase\"  (string, required) The reload passphrase (verified against argon2id hash)\n\n" +
+			"Result:\n" +
+			"\"text\"           (string) Confirmation that certificates were reloaded\n\n" +
+			"Examples:\n" +
+			"> twins-cli reloadrpccerts \"my-reload-passphrase\"",
 		"setloglevel": "setloglevel \"level\"\n\n" +
 			"Immediately change the log level of the running daemon.\n\n" +
 			"Arguments:\n" +
@@ -2115,6 +2128,95 @@ func (s *Server) handleSetLogLevel(req *Request) *Response {
 	return &Response{
 		JSONRPC: "2.0",
 		Result:  "Log level set to " + level.String(),
+		ID:      req.ID,
+	}
+}
+
+// handleReloadRPCCerts reloads TLS certificates via RPC (Windows/container
+// fallback for SIGHUP). Requires an argon2id-hashed passphrase configured
+// via rpc.tls.reload_passphrase_file. Per-IP exponential backoff on wrong
+// passphrase (no hard lockout).
+func (s *Server) handleReloadRPCCerts(req *Request) *Response {
+	// Check if TLS + passphrase are configured
+	if s.tlsManager == nil || !s.tlsManager.HasReloadPassphrase() {
+		return &Response{
+			JSONRPC: "2.0",
+			Error:   NewError(-1, "reloadrpccerts is disabled (no reload passphrase configured)", nil),
+			ID:      req.ID,
+		}
+	}
+
+	// Parse passphrase parameter
+	var params []interface{}
+	if err := json.Unmarshal(req.Params, &params); err != nil || len(params) < 1 {
+		return &Response{
+			JSONRPC: "2.0",
+			Error:   NewError(CodeInvalidParams, "Missing required parameter: passphrase", nil),
+			ID:      req.ID,
+		}
+	}
+	passphrase, ok := params[0].(string)
+	if !ok || passphrase == "" {
+		return &Response{
+			JSONRPC: "2.0",
+			Error:   NewError(CodeInvalidParams, "Passphrase must be a non-empty string", nil),
+			ID:      req.ID,
+		}
+	}
+
+	// Extract caller IP for backoff tracking
+	ip := req.RemoteAddr
+	if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		ip = host
+	}
+
+	// Check per-IP backoff
+	backoff := s.tlsManager.GetBackoff()
+	if backoff != nil {
+		if wait := backoff.Check(ip); wait > 0 {
+			s.logger.WithFields(logrus.Fields{
+				"ip":           ip,
+				"retry_after_s": int(wait.Seconds()) + 1,
+			}).Warn("reloadrpccerts rate limited")
+			return &Response{
+				JSONRPC: "2.0",
+				Error:   NewError(-1, fmt.Sprintf("rate limited — retry after %d seconds", int(wait.Seconds())+1), nil),
+				ID:      req.ID,
+			}
+		}
+	}
+
+	// Verify passphrase
+	if !s.tlsManager.VerifyReloadPassphrase(passphrase) {
+		if backoff != nil {
+			backoff.RecordFailure(ip)
+		}
+		s.logger.WithField("ip", ip).Warn("reloadrpccerts: incorrect passphrase")
+		return &Response{
+			JSONRPC: "2.0",
+			Error:   NewError(-1, "incorrect passphrase", nil),
+			ID:      req.ID,
+		}
+	}
+
+	// Passphrase correct — reload certificates
+	if err := s.tlsManager.Reload(); err != nil {
+		s.logger.WithError(err).Error("reloadrpccerts: certificate reload failed")
+		return &Response{
+			JSONRPC: "2.0",
+			Error:   NewError(CodeInternalError, "certificate reload failed", nil),
+			ID:      req.ID,
+		}
+	}
+
+	if backoff != nil {
+		backoff.RecordSuccess(ip)
+	}
+	s.logger.WithField("ip", ip).Info("TLS certificates reloaded via reloadrpccerts RPC")
+
+	return &Response{
+		JSONRPC: "2.0",
+		Result:  "TLS certificates reloaded",
 		ID:      req.ID,
 	}
 }

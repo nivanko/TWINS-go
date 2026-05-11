@@ -2,21 +2,21 @@ import React from 'react';
 import { UseFormRegister, FieldArrayWithId, FieldErrors } from 'react-hook-form';
 import { RecipientField } from './RecipientField';
 
-// CSS for dark theme scrollbar
+// CSS for dark theme scrollbar (Receive design tokens)
 const scrollbarStyles = `
   .recipient-scroll-container::-webkit-scrollbar {
     width: 8px;
   }
   .recipient-scroll-container::-webkit-scrollbar-track {
-    background: #2b2b2b;
+    background: #252525;
     border-radius: 4px;
   }
   .recipient-scroll-container::-webkit-scrollbar-thumb {
-    background: #555;
+    background: #444;
     border-radius: 4px;
   }
   .recipient-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #666;
+    background: #555;
   }
 `;
 
@@ -51,42 +51,32 @@ export const SendRecipients: React.FC<SendRecipientsProps> = ({
     <>
       <style>{scrollbarStyles}</style>
       <div
-        className="qt-frame-secondary recipient-scroll-container"
+        className="recipient-scroll-container"
         style={{
-          marginBottom: '8px',
-          padding: '8px',
-          border: '1px solid #4a4a4a',
-          borderRadius: '2px',
-          backgroundColor: '#3a3a3a',
           maxHeight: '280px',
           overflowY: 'auto',
           overflowX: 'hidden',
           scrollbarWidth: 'thin',
-          scrollbarColor: '#555 #2b2b2b'
-        }}>
+          scrollbarColor: '#555 #252525',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+        }}
+      >
         {fields.map((field, index) => (
-          <div key={field.id}>
-            {/* Add separator between recipients */}
-            {index > 0 && (
-              <div style={{
-                borderTop: '1px solid #4a4a4a',
-                margin: '8px 0',
-              }} />
-            )}
-
-            <RecipientField
-              index={index}
-              register={register}
-              address={watchedRecipients?.[index]?.address || ''}
-              label={watchedRecipients?.[index]?.label || ''}
-              showRemoveButton={fields.length > 1}
-              onRemove={() => onRemove(index)}
-              onUseMaximum={() => onUseMaximum(index)}
-              onAddressBookPick={onAddressBookPick ? () => onAddressBookPick(index) : undefined}
-              onSaveToAddressBook={onSaveToAddressBook}
-              errors={errors?.recipients?.[index]}
-            />
-          </div>
+          <RecipientField
+            key={field.id}
+            index={index}
+            register={register}
+            address={watchedRecipients?.[index]?.address || ''}
+            label={watchedRecipients?.[index]?.label || ''}
+            showRemoveButton={fields.length > 1}
+            onRemove={() => onRemove(index)}
+            onUseMaximum={() => onUseMaximum(index)}
+            onAddressBookPick={onAddressBookPick ? () => onAddressBookPick(index) : undefined}
+            onSaveToAddressBook={onSaveToAddressBook}
+            errors={errors?.recipients?.[index]}
+          />
         ))}
       </div>
     </>

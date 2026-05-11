@@ -166,6 +166,10 @@ export function GetCurrentReceivingAddress() {
   return window['go']['main']['App']['GetCurrentReceivingAddress']();
 }
 
+export function GetDaemonConfigBool(arg1) {
+  return window['go']['main']['App']['GetDaemonConfigBool'](arg1);
+}
+
 export function GetDaemonConfigCategories() {
   return window['go']['main']['App']['GetDaemonConfigCategories']();
 }
@@ -428,6 +432,10 @@ export function InitializeDataDirectory(arg1) {
 
 export function InitiateShutdown() {
   return window['go']['main']['App']['InitiateShutdown']();
+}
+
+export function IsDebugCollectorActive() {
+  return window['go']['main']['App']['IsDebugCollectorActive']();
 }
 
 export function IsDevMockMode() {

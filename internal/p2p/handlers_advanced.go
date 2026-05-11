@@ -1035,6 +1035,10 @@ func (s *Server) AskForMN(peer *Peer, outpoint types.Outpoint) {
 		return
 	}
 
+	// N-1: emit outbound dseg request event so the GUI's DSEGRequests count
+	// includes dseg sends WE initiate, not just inbound dseg from peers.
+	s.emitDSEGRequest(peer.GetAddress().String(), outpoint.String(), "out", 0)
+
 	// Update rate limit timestamp
 	s.askForMNMu.Lock()
 	s.askForMN[outpoint] = now + MASTERNODE_MIN_MNP_SECONDS
@@ -1137,12 +1141,9 @@ func (s *Server) handleDSEG(peer *Peer, msg *Message) {
 		return
 	}
 
-	// Debug: emit dseg request event
-	if dc := s.debugCollector.Load(); dc != nil && dc.IsEnabled() {
-		dc.EmitNetwork("dseg_request", peerAddr, fmt.Sprintf("DSEG request from %s (%d bytes)", peerAddr, len(msg.Payload)), map[string]any{
-			"payload_size": len(msg.Payload),
-		})
-	}
+	// Inbound dseg from peer asking us for masternode list. N-1: tag with
+	// direction:"in" so the GUI can distinguish inbound vs outbound dseg.
+	s.emitDSEGRequest(peerAddr, "", "in", len(msg.Payload))
 
 	// Parse CTxIn from payload to determine if requesting all or specific masternode
 	// Empty CTxIn (null hash + index 0xFFFFFFFF) = request all masternodes
@@ -1358,4 +1359,40 @@ func (s *Server) handleSyncStatusCount(peer *Peer, msg *Message) {
 	if s.mnManager != nil {
 		s.mnManager.ProcessSyncStatusCount(peerAddr, int(syncType), int(count))
 	}
+}
+// emitDSEGRequest emits a "dseg_request" debug event with a structured payload.
+// direction is "in" (peer asking us) or "out" (we asking a peer). outpoint is
+// either a specific masternode outpoint string or "" for a full-list request.
+// payloadSize is informational (only meaningful for inbound; pass 0 for outbound).
+//
+// Centralized so all three dseg-request emit sites (AskForMN outbound,
+// RequestMasternodeList outbound full-list, handleDSEG inbound) share the
+// same payload schema. N-1 from the masternode-debug-tab research audit.
+func (s *Server) emitDSEGRequest(peerAddr, outpoint, direction string, payloadSize int) {
+	dc := s.debugCollector.Load()
+	if dc == nil || !dc.IsEnabled() {
+		return
+	}
+	var summary string
+	switch direction {
+	case "in":
+		summary = fmt.Sprintf("DSEG request from %s (%d bytes)", peerAddr, payloadSize)
+	case "out":
+		if outpoint == "" {
+			summary = fmt.Sprintf("DSEG outbound to %s (full list)", peerAddr)
+		} else {
+			summary = fmt.Sprintf("DSEG outbound to %s for %s", peerAddr, outpoint)
+		}
+	}
+	payload := map[string]any{
+		"peer":      peerAddr,
+		"direction": direction,
+	}
+	if outpoint != "" {
+		payload["outpoint"] = outpoint
+	}
+	if payloadSize > 0 {
+		payload["payload_size"] = payloadSize
+	}
+	dc.EmitNetwork("dseg_request", peerAddr, summary, payload)
 }
