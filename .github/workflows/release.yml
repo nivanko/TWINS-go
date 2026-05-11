@@ -1004,7 +1004,7 @@ jobs:
           | Windows | x86_64 | twins-${VERSION}-win64.zip |"
           fi
 
-          cat > RELEASE_NOTES.md << NOTES
+          cat > RELEASE_TEXT.md << NOTES
           ## TWINS Core v${VERSION}
 
           ### Downloads
@@ -1018,15 +1018,10 @@ jobs:
           \`\`\`bash
           sha256sum -c SHA256SUMS.txt
           \`\`\`
-
-          ### Changes
-
-          - Full Go implementation with Proof-of-Stake consensus
-          - 4-tier masternode system (Bronze/Silver/Gold/Platinum)
-          - HD wallet with BIP32/44 support
-          - Legacy wallet migration from C++ version
-          - Pebble database backend (40% faster than LevelDB)
           NOTES
+
+          printf '\n' >> RELEASE_TEXT.md
+          cat RELEASE_NOTES.md >> RELEASE_TEXT.md
 
           cat dist/SHA256SUMS.txt
 
@@ -1041,5 +1036,5 @@ jobs:
 
           gh release create "$RELEASE_TAG" dist/* \
             --title "TWINS Core v${VERSION}" \
-            --notes-file RELEASE_NOTES.md \
+            --notes-file RELEASE_TEXT.md \
             --target "$GITHUB_SHA"
